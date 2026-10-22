@@ -77,3 +77,4 @@
 .daily-matrix .matrix-values-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(82px,1fr));align-items:start;gap:8px}
 .daily-matrix .matrix-value-field{min-width:0}
 .daily-matrix .matrix-value-wide{grid-column:1/-1}
+.matrix-value-field.review-field-red{padding:5px;border:1px solid #dc2626;border-radius:8px;background:#fff1f2}.matrix-value-field.review-field-yellow{padding:5px;border:1px solid #d97706;border-radius:8px;background:#fffbeb}.review-field-note{display:block;margin-top:4px;font-size:10px;line-height:1.4;font-weight:600}.review-field-note.red{color:#b91c1c}.review-field-note.yellow{color:#92400e}.review-general-comment{display:block;max-width:220px;margin-top:5px;color:#9f1239;font-size:10px;line-height:1.4;white-space:normal}.review-field-history{margin-top:5px;color:var(--muted);font-size:9px}.review-field-history summary{cursor:pointer}.review-field-history small{display:block;margin-top:3px;line-height:1.4}

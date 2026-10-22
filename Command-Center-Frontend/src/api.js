@@ -21,6 +21,9 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => null);
+    if (response.status === 404) {
+      throw new Error(error?.message || `API endpoint not found (${path}). Restart the backend from Command-Center-Backend so it loads the current controllers.`);
+    }
     if (response.status === 401) {
       localStorage.removeItem("dcc-session");
       localStorage.removeItem("dcc-token");

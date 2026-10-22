@@ -48,6 +48,7 @@ builder.Services.AddScoped<DailyReportExcelImportService>();
 builder.Services.AddScoped<ViewerRepository>();
 builder.Services.AddScoped<InvitationEmailService>();
 builder.Services.AddScoped<PasswordResetRepository>();
+builder.Services.AddHttpClient<SmsOtpService>();
 
 var app = builder.Build();
 

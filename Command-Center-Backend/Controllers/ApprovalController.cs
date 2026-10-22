@@ -103,11 +103,26 @@ public sealed class ApprovalController(
                 aq.DailyReportId,
                 aq.Status,
                 aq.SubmittedAt,
+                dr.ReportDate,
                 c.CustomerName,
                 cat.CategoryName,
                 pl.LineName,
                 m.ModelName,
-                u.FullName AS SubmittedByName
+                u.FullName AS SubmittedByName,
+                dr.SubmissionBatchId,
+                CASE WHEN dr.SubmissionBatchEnforced=1 THEN
+                    (SELECT COUNT(1) FROM DailyReport other
+                     WHERE other.PlantId=dr.PlantId AND other.ReportDate=dr.ReportDate AND other.CustomerId=dr.CustomerId
+                       AND other.CategoryId=dr.CategoryId AND other.CreatedBy=dr.CreatedBy AND other.IsActive=1 AND other.ModelId IS NOT NULL
+                       AND other.Status NOT IN ('APPROVED','INACTIVE')
+                       AND (other.Status<>'SUBMITTED' OR other.SubmissionBatchId<>dr.SubmissionBatchId))
+                    + (SELECT COUNT(1) FROM ProductionLine pl INNER JOIN Category cat ON cat.CategoryId=pl.CategoryId
+                       WHERE pl.PlantId=dr.PlantId AND pl.IsActive=1 AND cat.PlantId=dr.PlantId AND cat.CustomerId=dr.CustomerId
+                         AND cat.CategoryId=dr.CategoryId AND cat.IsActive=1
+                         AND NOT EXISTS(SELECT 1 FROM DailyReport lineState WHERE lineState.PlantId=dr.PlantId AND lineState.ReportDate=dr.ReportDate
+                           AND lineState.CustomerId=dr.CustomerId AND lineState.CategoryId=dr.CategoryId AND lineState.LineId=pl.LineId
+                           AND lineState.CreatedBy=dr.CreatedBy AND ((lineState.ModelId IS NULL AND lineState.IsActive=0) OR (lineState.ModelId IS NOT NULL AND lineState.IsActive=1))))
+                    ELSE 0 END AS IncompleteCount
             FROM ApprovalQueue aq
             INNER JOIN DailyReport dr
                 ON dr.DailyReportId = aq.DailyReportId
@@ -151,17 +166,20 @@ public sealed class ApprovalController(
                 dailyReportId = reader.GetInt32(1),
                 status = reader.GetString(2),
                 submittedAt = reader.GetDateTime(3),
+                reportDate = reader.GetDateTime(4).Date,
 
-                customerName = reader.GetString(4),
-                categoryName = reader.GetString(5),
-                lineName = reader.GetString(6),
+                customerName = reader.GetString(5),
+                categoryName = reader.GetString(6),
+                lineName = reader.GetString(7),
 
                 modelName =
-                    reader.IsDBNull(7)
+                    reader.IsDBNull(8)
                         ? null
-                        : reader.GetString(7),
+                        : reader.GetString(8),
 
-                submittedBy = reader.GetString(8)
+                submittedBy = reader.GetString(9),
+                submissionBatchId = reader.IsDBNull(10) ? (Guid?)null : reader.GetGuid(10),
+                incompleteCount = reader.GetInt32(11)
             });
         }
 
@@ -543,6 +561,189 @@ public sealed class ApprovalController(
 
 
     // =========================================================
+    // BATCH REVIEW
+    // =========================================================
+
+    [HttpGet("batch/{batchId:guid}")]
+    public async Task<IActionResult> BatchDetail(Guid batchId, CancellationToken cancellationToken)
+    {
+        var userId = GetUserId(); var plantId = GetPlantId();
+        if (userId <= 0 || plantId <= 0) return Unauthorized();
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        const string sql = """
+            SELECT aq.ApprovalQueueId, dr.DailyReportId, aq.Status, aq.SubmittedAt,
+                   dr.ReportDate, c.CustomerName, cat.CategoryName, pl.LineName, pl.SAPLocation,
+                   m.ModelName, submitter.FullName, dr.ProductionPlan, dr.ProductionActual,
+                   dr.UPHTarget, dr.UPHActual, dr.UPPHTarget, dr.UPPHActual, dr.CPHTarget, dr.CPHActual,
+                   dr.FPYTarget, dr.FPYActual, dr.FTYTarget, dr.FTYActual, dr.RTYTarget, dr.RTYActual,
+                   dr.MonthPlan, dr.MonthActual, dr.OSDReportingDateValue, dr.OSDReportingDatePercent,
+                   dr.OSDMTDValue, dr.OSDMTDPercent, dr.PlannedOTManhours, dr.UnplannedOTManhours,
+                   dr.ActualOTManhours, dr.OpenWOQty, dr.Over7DaysWOBalanceQty, dr.DailyTRCInQty,
+                   dr.DailyTRCOutQty, dr.TRCOverallFailureInflowPercent, dr.TRCLyingOver3DaysCr,
+                   dr.IssueDescription, dr.RejectionReason
+            FROM DailyReport dr
+            INNER JOIN ApprovalQueue aq ON aq.DailyReportId=dr.DailyReportId
+            INNER JOIN Customer c ON c.CustomerId=dr.CustomerId
+            INNER JOIN Category cat ON cat.CategoryId=dr.CategoryId
+            INNER JOIN ProductionLine pl ON pl.LineId=dr.LineId
+            LEFT JOIN Model m ON m.ModelId=dr.ModelId
+            INNER JOIN [User] submitter ON submitter.UserId=dr.CreatedBy
+            INNER JOIN UserCustomer uc ON uc.CustomerId=dr.CustomerId AND uc.UserId=@UserId
+            INNER JOIN PlantCustomer pc ON pc.PlantId=dr.PlantId AND pc.CustomerId=dr.CustomerId
+            WHERE dr.SubmissionBatchId=@BatchId AND dr.PlantId=@PlantId AND dr.IsActive=1 AND dr.ModelId IS NOT NULL
+            ORDER BY pl.LineName, m.ModelName;
+            """;
+        await using var command = new SqlCommand(sql, connection);
+        Add(command,"@BatchId",SqlDbType.UniqueIdentifier,batchId); Add(command,"@PlantId",SqlDbType.Int,plantId); Add(command,"@UserId",SqlDbType.Int,userId);
+        var rows = new List<object>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var reportId = reader.GetInt32(1);
+            rows.Add(new {
+                approvalQueueId=reader.GetInt32(0), dailyReportId=reportId, status=reader.GetString(2), submittedAt=reader.GetDateTime(3),
+                reportDate=reader.GetDateTime(4).ToString("yyyy-MM-dd"), customerName=reader.GetString(5), categoryName=reader.GetString(6),
+                lineName=reader.GetString(7), sapLocation=reader.IsDBNull(8)?null:reader.GetString(8), modelName=reader.IsDBNull(9)?null:reader.GetString(9), submittedBy=reader.GetString(10),
+                metrics=new {
+                    productionPlan=GetDecimal(reader,11), productionActual=GetDecimal(reader,12), uphTarget=GetDecimal(reader,13), uphActual=GetDecimal(reader,14),
+                    upphTarget=GetDecimal(reader,15), upphActual=GetDecimal(reader,16), cphTarget=GetDecimal(reader,17), cphActual=GetDecimal(reader,18),
+                    fpyTarget=GetDecimal(reader,19), fpyActual=GetDecimal(reader,20), ftyTarget=GetDecimal(reader,21), ftyActual=GetDecimal(reader,22),
+                    rtyTarget=GetDecimal(reader,23), rtyActual=GetDecimal(reader,24), monthPlan=GetDecimal(reader,25), monthActual=GetDecimal(reader,26),
+                    osdReportingDateValue=GetDecimal(reader,27), osdReportingDatePercent=GetDecimal(reader,28), osdMtdValue=GetDecimal(reader,29), osdMtdPercent=GetDecimal(reader,30),
+                    plannedOTManhours=GetDecimal(reader,31), unplannedOTManhours=GetDecimal(reader,32), actualOTManhours=GetDecimal(reader,33),
+                    openWOQty=GetInt(reader,34), over7DaysWOBalanceQty=GetInt(reader,35), dailyTRCInQty=GetInt(reader,36), dailyTRCOutQty=GetInt(reader,37),
+                    trcOverallFailureInflowPercent=GetDecimal(reader,38), trcLyingOver3DaysCr=GetDecimal(reader,39), issueDescription=GetString(reader,40), rejectionReason=GetString(reader,41)
+                }
+            });
+        }
+        if (rows.Count == 0) return NotFound(new { message="Approval batch not found or outside your plant/customer assignment." });
+        return Ok(rows);
+    }
+
+    [HttpGet("batch/{batchId:guid}/annotations")]
+    public async Task<IActionResult> BatchAnnotations(Guid batchId,CancellationToken cancellationToken)
+    {
+        var userId=GetUserId();var plantId=GetPlantId();if(userId<=0||plantId<=0)return Unauthorized();
+        await using var connection=await connectionFactory.OpenAsync(cancellationToken);
+        const string sql="""
+            SELECT a.AnnotationId,a.DailyReportId,a.FieldKey,a.Severity,a.Comment,a.OriginalValue,a.CorrectedValue,a.CreatedAt,a.ResolvedAt,creator.FullName,resolver.FullName
+            FROM ReportFieldAnnotation a INNER JOIN DailyReport dr ON dr.DailyReportId=a.DailyReportId
+            INNER JOIN [User] creator ON creator.UserId=a.CreatedBy LEFT JOIN [User] resolver ON resolver.UserId=a.ResolvedBy
+            INNER JOIN UserCustomer uc ON uc.CustomerId=dr.CustomerId AND uc.UserId=@UserId
+            INNER JOIN PlantCustomer pc ON pc.PlantId=dr.PlantId AND pc.CustomerId=dr.CustomerId
+            WHERE dr.SubmissionBatchId=@BatchId AND dr.PlantId=@PlantId ORDER BY a.CreatedAt,a.AnnotationId;
+            """;
+        await using var command=new SqlCommand(sql,connection);Add(command,"@BatchId",SqlDbType.UniqueIdentifier,batchId);Add(command,"@PlantId",SqlDbType.Int,plantId);Add(command,"@UserId",SqlDbType.Int,userId);
+        var rows=new List<object>();await using var reader=await command.ExecuteReaderAsync(cancellationToken);while(await reader.ReadAsync(cancellationToken))rows.Add(new{annotationId=reader.GetInt64(0),dailyReportId=reader.GetInt32(1),fieldKey=reader.GetString(2),severity=reader.GetString(3),comment=reader.GetString(4),originalValue=reader.IsDBNull(5)?null:reader.GetString(5),correctedValue=reader.IsDBNull(6)?null:reader.GetString(6),createdAt=reader.GetDateTime(7),resolvedAt=reader.IsDBNull(8)?(DateTime?)null:reader.GetDateTime(8),createdBy=reader.GetString(9),resolvedBy=reader.IsDBNull(10)?null:reader.GetString(10)});return Ok(rows);
+    }
+
+    [HttpPost("batch/{batchId:guid}/reject")]
+    public Task<IActionResult> RejectBatch(Guid batchId, [FromBody] BatchReviewRequest request, CancellationToken cancellationToken)
+        => ReviewBatch(batchId, false, request, cancellationToken);
+
+    [HttpPost("batch/{batchId:guid}/approve")]
+    public Task<IActionResult> ApproveBatch(Guid batchId, CancellationToken cancellationToken)
+        => ReviewBatch(batchId, true, new BatchReviewRequest(), cancellationToken);
+
+    private async Task<IActionResult> ReviewBatch(Guid batchId, bool approve, BatchReviewRequest request, CancellationToken cancellationToken)
+    {
+        if (!approve && string.IsNullOrWhiteSpace(request.Comment)) return BadRequest(new { message="Add a general review comment before returning this report." });
+        if (!approve && (request.Fields?.Count ?? 0) > 80) return BadRequest(new { message="A review can contain up to 80 field annotations." });
+        var userId=GetUserId(); var plantId=GetPlantId(); if(userId<=0||plantId<=0)return Unauthorized();
+        await using var connection=await connectionFactory.OpenAsync(cancellationToken);
+        await using var tx=(SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable,cancellationToken);
+        try
+        {
+            const string rowsSql="""
+                SELECT dr.DailyReportId, aq.Status, dr.Status, dr.ReportDate, dr.CustomerId, dr.CategoryId, dr.CreatedBy, dr.SubmissionBatchEnforced
+                FROM DailyReport dr WITH (UPDLOCK,HOLDLOCK)
+                INNER JOIN ApprovalQueue aq WITH (UPDLOCK,HOLDLOCK) ON aq.DailyReportId=dr.DailyReportId
+                INNER JOIN UserCustomer uc ON uc.CustomerId=dr.CustomerId AND uc.UserId=@UserId
+                INNER JOIN PlantCustomer pc ON pc.PlantId=dr.PlantId AND pc.CustomerId=dr.CustomerId
+                WHERE dr.SubmissionBatchId=@BatchId AND dr.PlantId=@PlantId AND dr.IsActive=1 AND dr.ModelId IS NOT NULL;
+                """;
+            var ids=new List<int>();DateTime? batchDate=null;int batchCustomer=0,batchCategory=0,batchSubmitter=0;bool batchEnforced=false;
+            await using(var rowsCommand=new SqlCommand(rowsSql,connection,tx))
+            {
+                Add(rowsCommand,"@BatchId",SqlDbType.UniqueIdentifier,batchId); Add(rowsCommand,"@PlantId",SqlDbType.Int,plantId); Add(rowsCommand,"@UserId",SqlDbType.Int,userId);
+                await using var reader=await rowsCommand.ExecuteReaderAsync(cancellationToken);
+                while(await reader.ReadAsync(cancellationToken))
+                {
+                    if(reader.GetString(1)!="PENDING"||reader.GetString(2)!="SUBMITTED")
+                    { await tx.RollbackAsync(cancellationToken); return Conflict(new { message="Every active line/model entry in this daily batch must be submitted and pending before the batch can be reviewed." }); }
+                    batchDate ??=reader.GetDateTime(3);batchCustomer=reader.GetInt32(4);batchCategory=reader.GetInt32(5);batchSubmitter=reader.GetInt32(6);
+                    batchEnforced |= reader.GetBoolean(7);
+                    ids.Add(reader.GetInt32(0));
+                }
+            }
+            if(ids.Count==0){await tx.RollbackAsync(cancellationToken);return NotFound(new { message="Batch not found or outside your plant/customer assignment." });}
+            if(batchEnforced)
+            {
+                const string incompleteSql="""
+                    SELECT
+                      (SELECT COUNT(1) FROM DailyReport WITH (UPDLOCK,HOLDLOCK) WHERE PlantId=@PlantId AND ReportDate=@Date AND CustomerId=@CustomerId AND CategoryId=@CategoryId AND CreatedBy=@Submitter AND IsActive=1 AND ModelId IS NOT NULL AND Status NOT IN ('APPROVED','INACTIVE') AND (Status<>'SUBMITTED' OR SubmissionBatchId<>@BatchId))
+                      + (SELECT COUNT(1) FROM ProductionLine pl INNER JOIN Category cat ON cat.CategoryId=pl.CategoryId
+                         WHERE pl.PlantId=@PlantId AND pl.IsActive=1 AND cat.PlantId=@PlantId AND cat.CustomerId=@CustomerId AND cat.CategoryId=@CategoryId AND cat.IsActive=1
+                           AND NOT EXISTS(SELECT 1 FROM DailyReport lineState WHERE lineState.PlantId=@PlantId AND lineState.ReportDate=@Date AND lineState.CustomerId=@CustomerId AND lineState.CategoryId=@CategoryId AND lineState.LineId=pl.LineId AND lineState.CreatedBy=@Submitter AND ((lineState.ModelId IS NULL AND lineState.IsActive=0) OR (lineState.ModelId IS NOT NULL AND lineState.IsActive=1))));
+                    """;
+                await using var incomplete=new SqlCommand(incompleteSql,connection,tx);Add(incomplete,"@PlantId",SqlDbType.Int,plantId);Add(incomplete,"@Date",SqlDbType.Date,batchDate);Add(incomplete,"@CustomerId",SqlDbType.Int,batchCustomer);Add(incomplete,"@CategoryId",SqlDbType.Int,batchCategory);Add(incomplete,"@Submitter",SqlDbType.Int,batchSubmitter);Add(incomplete,"@BatchId",SqlDbType.UniqueIdentifier,batchId);
+                if(Convert.ToInt32(await incomplete.ExecuteScalarAsync(cancellationToken))>0){await tx.RollbackAsync(cancellationToken);return Conflict(new{message="This reporting date has draft or unsubmitted model entries, or active lines without a submitted report. Submit each active line or mark unused lines inactive before reviewing the complete daily batch."});}
+            }
+            var seen=new HashSet<(int,string)>(new FieldAnnotationKeyComparer());
+            if(!approve)
+            {
+                foreach(var field in request.Fields??[])
+                {
+                    if(!ids.Contains(field.DailyReportId)||!AnnotationColumns.TryGetValue(field.FieldKey??"",out var column)||
+                       (field.Severity!="RED"&&field.Severity!="YELLOW")||string.IsNullOrWhiteSpace(field.Comment)||field.Comment.Length>1000||
+                       !seen.Add((field.DailyReportId,field.FieldKey!)))
+                    { await tx.RollbackAsync(cancellationToken); return BadRequest(new { message="Each annotation must target a field in this batch, use RED or YELLOW, and include one specific comment." }); }
+                    string? original;
+                    await using(var valueCommand=new SqlCommand($"SELECT CONVERT(nvarchar(4000),[{column}]) FROM DailyReport WHERE DailyReportId=@ReportId AND PlantId=@PlantId;",connection,tx))
+                    { Add(valueCommand,"@ReportId",SqlDbType.Int,field.DailyReportId); Add(valueCommand,"@PlantId",SqlDbType.Int,plantId); original=Convert.ToString(await valueCommand.ExecuteScalarAsync(cancellationToken)); }
+                    const string insertAnnotation="INSERT INTO ReportFieldAnnotation(DailyReportId,SubmissionBatchId,FieldKey,Severity,Comment,OriginalValue,CreatedBy) VALUES(@ReportId,@BatchId,@Field,@Severity,@Comment,@Original,@UserId);";
+                    await using var insert=new SqlCommand(insertAnnotation,connection,tx);
+                    Add(insert,"@ReportId",SqlDbType.Int,field.DailyReportId); Add(insert,"@BatchId",SqlDbType.UniqueIdentifier,batchId); Add(insert,"@Field",SqlDbType.VarChar,field.FieldKey);
+                    Add(insert,"@Severity",SqlDbType.VarChar,field.Severity); Add(insert,"@Comment",SqlDbType.VarChar,field.Comment.Trim()); Add(insert,"@Original",SqlDbType.NVarChar,original); Add(insert,"@UserId",SqlDbType.Int,userId);
+                    await insert.ExecuteNonQueryAsync(cancellationToken);
+                }
+            }
+            var outcome=approve?"APPROVED":"REJECTED";
+            const string updateSql="""
+                UPDATE aq SET Status=@Status,ReviewedBy=@UserId,ReviewedAt=SYSUTCDATETIME(),Comments=@Comment,UpdatedAt=SYSUTCDATETIME()
+                FROM ApprovalQueue aq INNER JOIN DailyReport dr ON dr.DailyReportId=aq.DailyReportId
+                WHERE dr.SubmissionBatchId=@BatchId AND dr.PlantId=@PlantId AND aq.Status='PENDING';
+                UPDATE dr SET Status=@Status,ApprovedBy=CASE WHEN @Status='APPROVED' THEN @UserId ELSE NULL END,
+                    ApprovedAt=CASE WHEN @Status='APPROVED' THEN SYSUTCDATETIME() ELSE NULL END,
+                    RejectionReason=CASE WHEN @Status='REJECTED' THEN @Comment ELSE NULL END,UpdatedAt=SYSUTCDATETIME()
+                FROM DailyReport dr WHERE dr.SubmissionBatchId=@BatchId AND dr.PlantId=@PlantId AND dr.IsActive=1 AND dr.ModelId IS NOT NULL;
+                INSERT INTO ReportApproval(DailyReportId,ActionBy,ActionType,Comments,ActionAt)
+                SELECT dr.DailyReportId,@UserId,@Status,@Comment,SYSUTCDATETIME()
+                FROM DailyReport dr WHERE dr.SubmissionBatchId=@BatchId AND dr.PlantId=@PlantId AND dr.IsActive=1 AND dr.ModelId IS NOT NULL;
+                """;
+            await using(var update=new SqlCommand(updateSql,connection,tx))
+            { Add(update,"@Status",SqlDbType.VarChar,outcome); Add(update,"@UserId",SqlDbType.Int,userId); Add(update,"@Comment",SqlDbType.VarChar,approve?null:request.Comment!.Trim()); Add(update,"@BatchId",SqlDbType.UniqueIdentifier,batchId); Add(update,"@PlantId",SqlDbType.Int,plantId); await update.ExecuteNonQueryAsync(cancellationToken); }
+            if(approve) foreach(var reportId in ids) await CreateFinalKpiSnapshotAsync(connection,tx,reportId,cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+            return Ok(new { status=outcome, reviewedCount=ids.Count, message=approve?"Daily report batch approved and locked.":"Daily report batch returned with reviewer annotations." });
+        }
+        catch { await tx.RollbackAsync(cancellationToken); throw; }
+    }
+
+    private static readonly IReadOnlyDictionary<string,string> AnnotationColumns = new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["monthPlan"]="MonthPlan",["monthActual"]="MonthActual",["productionPlan"]="ProductionPlan",["productionActual"]="ProductionActual",
+        ["uphTarget"]="UPHTarget",["uphActual"]="UPHActual",["upphTarget"]="UPPHTarget",["upphInstalled"]="UPPHInstalled",["upphActual"]="UPPHActual",
+        ["cphTarget"]="CPHTarget",["cphActual"]="CPHActual",["fpyTarget"]="FPYTarget",["fpyActual"]="FPYActual",["ftyTarget"]="FTYTarget",["ftyActual"]="FTYActual",
+        ["rtyTarget"]="RTYTarget",["rtyActual"]="RTYActual",["osdTarget"]="OSDTarget",["osdReportingDateValue"]="OSDReportingDateValue",["osdReportingDatePercent"]="OSDReportingDatePercent",
+        ["osdMtdValue"]="OSDMTDValue",["osdMtdPercent"]="OSDMTDPercent",["otTarget"]="OTTarget",["plannedOTManhours"]="PlannedOTManhours",["unplannedOTManhours"]="UnplannedOTManhours",
+        ["actualOTManhours"]="ActualOTManhours",["openWOQty"]="OpenWOQty",["over7DaysWOBalanceQty"]="Over7DaysWOBalanceQty",["dailyTRCInQty"]="DailyTRCInQty",["dailyTRCOutQty"]="DailyTRCOutQty",
+        ["trcOverallFailureInflowPercent"]="TRCOverallFailureInflowPercent",["trcLyingOver3DaysCr"]="TRCLyingOver3DaysCr",["issueDescription"]="IssueDescription"
+    };
+    private sealed class FieldAnnotationKeyComparer : IEqualityComparer<(int,string)>
+    { public bool Equals((int,string) x,(int,string) y)=>x.Item1==y.Item1&&StringComparer.OrdinalIgnoreCase.Equals(x.Item2,y.Item2); public int GetHashCode((int,string) value)=>HashCode.Combine(value.Item1,StringComparer.OrdinalIgnoreCase.GetHashCode(value.Item2)); }
+
+    // =========================================================
     // APPROVE
     // =========================================================
 
@@ -623,7 +824,8 @@ public sealed class ApprovalController(
                 SELECT
                     aq.DailyReportId,
                     aq.Status,
-                    dr.CustomerId
+                    dr.CustomerId,
+                    dr.SubmissionBatchEnforced
                 FROM ApprovalQueue aq
 
                 INNER JOIN DailyReport dr
@@ -681,8 +883,15 @@ public sealed class ApprovalController(
             var dailyReportId = reader.GetInt32(0);
             dailyReportIdForLog = dailyReportId;
             var status = reader.GetString(1);
+            var batchEnforced = reader.GetBoolean(3);
 
             await reader.CloseAsync();
+
+            if (batchEnforced)
+            {
+                await tx.RollbackAsync(cancellationToken);
+                return Conflict(new { message="This report belongs to a consolidated daily batch. Review the complete batch from the review queue." });
+            }
 
             if (!string.Equals(
                     status,
@@ -1226,3 +1435,15 @@ public sealed class ApprovalController(
 // =============================================================
 
 public sealed record ReviewRequest(string? Comment);
+public sealed class BatchReviewRequest
+{
+    public string? Comment { get; set; }
+    public List<BatchFieldAnnotationRequest>? Fields { get; set; }
+}
+public sealed class BatchFieldAnnotationRequest
+{
+    public int DailyReportId { get; set; }
+    public string? FieldKey { get; set; }
+    public string? Severity { get; set; }
+    public string? Comment { get; set; }
+}
