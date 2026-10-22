@@ -53,3 +53,7 @@
 .model-add-context{display:flex;align-items:flex-start;gap:8px;margin:0 0 12px;padding:10px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-info-soft);color:var(--color-info);font-size:11px;line-height:1.5}
 .model-add-context svg{flex:0 0 auto;margin-top:1px}
 .model-add-context strong{color:var(--color-secondary)}
+
+.user-invite-note{display:flex;align-items:flex-start;gap:9px;margin:0 0 12px;padding:10px 11px;border:1px solid #DCE3EA;border-radius:9px;background:#F4F6F8;color:#526275;font-size:11px;line-height:1.5}
+.user-invite-note svg{flex:none;margin-top:1px;color:#059669}
+.user-form-hint{display:block;margin-top:5px;color:#64748B;font-size:10px;font-weight:500}

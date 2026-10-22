@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, RefreshCw, X, Search, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "../../api";
-import Header from "../../components/Header";
-import AppFooter from "../../components/AppFooter";
+import PortalLayout from "../../components/PortalLayout";
 import "./viewerDashboard.css";
 import "./ViewerProgress.css";
 
@@ -172,21 +171,7 @@ export default function ViewerDashboard({ session, onSignOut }) {
     return counts;
   }, {}), [data.lines]);
 
-  return <div className="viewer-page">
-    <Header user={session?.user} onSignOut={onSignOut} />
-    <div className="viewer-shell">
-      <aside className="viewer-sidebar" aria-label="Viewer navigation">
-        <div className="viewer-sidebar-brand"><span className="viewer-brand-mark">D</span><div><strong>DIXON</strong><small>COMMAND CENTER</small></div></div>
-        <span className="viewer-sidebar-label">WORKSPACE</span>
-        <nav className="viewer-side-nav" aria-label="Viewer pages">
-          <a className="active" href="/viewer"><span>▦</span>Dashboard</a>
-          <a href="/viewer/exceptions"><span>⚑</span>Operations Exceptions</a>
-          <a href="/viewer/comparison"><span>⇄</span>Period Comparison</a>
-          <a href="/viewer/tracker"><span>☷</span>Report Tracker</a>
-          <a href="/viewer/reports"><span>▤</span>Report Center</a>
-        </nav>
-        <div className="viewer-sidebar-note"><span className="viewer-status-dot"/> Read-only access <small>Production insights</small></div>
-      </aside>
+  return <PortalLayout user={session?.user} onSignOut={onSignOut}><div className="viewer-page">
       <main className="viewer-main">
       <div className="viewer-title-row">
         <div><span className="eyebrow">READ ONLY</span><h1>FATP & SMT Work Progress</h1><p>Date-wise production and KPI visibility for the selected plant.</p></div>
@@ -257,9 +242,7 @@ export default function ViewerDashboard({ session, onSignOut }) {
         <div className="viewer-pagination"><span>Showing {filteredLines.length ? (safePage - 1) * pageSize + 1 : 0}–{Math.min(safePage * pageSize, filteredLines.length)} of {filteredLines.length}</span><div><button className="secondary-btn" onClick={() => setPage(current => Math.max(1, current - 1))} disabled={safePage <= 1}><ChevronLeft size={15}/> Previous</button><span className="viewer-page-indicator">Page {safePage} of {pageCount}</span><button className="secondary-btn" onClick={() => setPage(current => Math.min(pageCount, current + 1))} disabled={safePage >= pageCount}>Next <ChevronRight size={15}/></button></div></div>
       </section>
       </main>
-    </div>
-    <AppFooter />
-  </div>;
+  </div></PortalLayout>;
 }
 
 function TrendChart({ data, maxValue, days }) {

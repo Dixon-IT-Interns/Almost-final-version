@@ -114,6 +114,82 @@ public sealed class ContributorController(SqlConnectionFactory connectionFactory
         return Ok(rows);
     }
 
+    [HttpGet("notifications")]
+    public async Task<IActionResult> Notifications(
+        [FromQuery] bool includeMissingReminder = false,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = GetUserId(); if (userId <= 0) return Unauthorized();
+        var plantId = GetPlantId(); if (plantId <= 0) return Unauthorized();
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+
+        const string rejectedSql = """
+            SELECT dr.DailyReportId, dr.ReportDate, c.CustomerName, cat.CategoryName,
+                   pl.LineName, m.ModelName, dr.RejectionReason, aq.ReviewedAt
+            FROM DailyReport dr
+            INNER JOIN UserCustomer uc ON uc.CustomerId=dr.CustomerId AND uc.UserId=@UserId
+            INNER JOIN PlantCustomer pc ON pc.PlantId=dr.PlantId AND pc.CustomerId=dr.CustomerId
+            INNER JOIN Customer c ON c.CustomerId=dr.CustomerId
+            INNER JOIN Category cat ON cat.CategoryId=dr.CategoryId
+            INNER JOIN ProductionLine pl ON pl.LineId=dr.LineId
+            LEFT JOIN Model m ON m.ModelId=dr.ModelId
+            LEFT JOIN ApprovalQueue aq ON aq.DailyReportId=dr.DailyReportId
+            WHERE dr.CreatedBy=@UserId AND dr.PlantId=@PlantId AND dr.Status='REJECTED'
+            ORDER BY COALESCE(aq.ReviewedAt, dr.UpdatedAt, dr.CreatedAt) DESC;
+            """;
+        await using var rejectedCommand = new SqlCommand(rejectedSql, connection);
+        Add(rejectedCommand,"@UserId",SqlDbType.Int,userId); Add(rejectedCommand,"@PlantId",SqlDbType.Int,plantId);
+        var notifications = new List<object>();
+        await using (var reader = await rejectedCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                notifications.Add(new {
+                    id = $"rejected-{reader.GetInt32(0)}", type = "REJECTED",
+                    reportDate = reader.GetDateTime(1).ToString("yyyy-MM-dd"),
+                    customerName = reader.GetString(2), categoryName = reader.GetString(3),
+                    lineName = reader.GetString(4), modelName = reader.IsDBNull(5) ? null : reader.GetString(5),
+                    message = reader.IsDBNull(6) ? "Your report was rejected. Please review and resubmit it." : reader.GetString(6),
+                    createdAt = reader.IsDBNull(7) ? (DateTime?)null : reader.GetDateTime(7),
+                    link = "/contributor/reports"
+                });
+            }
+        }
+
+        var reportingTimeZone = TimeZoneInfo.FindSystemTimeZoneById(
+            OperatingSystem.IsWindows() ? "India Standard Time" : "Asia/Kolkata");
+        var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, reportingTimeZone);
+        if (includeMissingReminder || localNow.TimeOfDay >= new TimeSpan(21, 0, 0))
+        {
+            var reportDate = localNow.Date.AddDays(-1);
+            const string missingSql = """
+                SELECT CASE WHEN EXISTS
+                (
+                    SELECT 1 FROM DailyReport dr
+                    INNER JOIN UserCustomer uc ON uc.CustomerId=dr.CustomerId AND uc.UserId=@UserId
+                    INNER JOIN PlantCustomer pc ON pc.PlantId=dr.PlantId AND pc.CustomerId=dr.CustomerId
+                    WHERE dr.CreatedBy=@UserId AND dr.PlantId=@PlantId AND dr.ReportDate=@ReportDate
+                ) THEN 0 ELSE 1 END;
+                """;
+            await using var missingCommand = new SqlCommand(missingSql, connection);
+            Add(missingCommand,"@UserId",SqlDbType.Int,userId); Add(missingCommand,"@PlantId",SqlDbType.Int,plantId);
+            Add(missingCommand,"@ReportDate",SqlDbType.Date,reportDate);
+            if (Convert.ToInt32(await missingCommand.ExecuteScalarAsync(cancellationToken)) == 1)
+            {
+                notifications.Add(new {
+                    id = $"missing-{reportDate:yyyy-MM-dd}", type = "MISSING_REPORT",
+                    reportDate = reportDate.ToString("yyyy-MM-dd"),
+                    customerName = (string?)null, categoryName = (string?)null,
+                    lineName = (string?)null, modelName = (string?)null,
+                    message = "No report was created for this date. Please submit the missing daily report.",
+                    createdAt = (DateTime?)null, link = "/contributor/brands"
+                });
+            }
+        }
+
+        return Ok(notifications);
+    }
+
     private int GetUserId()=>int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier),out var id)?id:0;
     private int GetPlantId()=>int.TryParse(User.FindFirstValue("plantId"),out var plantId)?plantId:0;
     private static void Add(SqlCommand c,string n,SqlDbType t,object? v){var p=c.Parameters.Add(n,t);p.Value=v??DBNull.Value;}

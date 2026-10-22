@@ -1,4 +1,4 @@
-import { ClipboardList, Factory, LayoutDashboard, FileClock } from "lucide-react";
+import { ClipboardList, Factory, LayoutDashboard, FileClock, Settings } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import "./ContributorShell.css";
 import dixonLogo from "../../assets/dixon-logo.jpeg";
@@ -23,6 +23,10 @@ export default function Sidebar() {
         <NavLink to="/contributor/activity" className="cc-sidebar-item" title="Activity">
           <FileClock size={19} />
           <span>Activity</span>
+        </NavLink>
+        <NavLink to="/profile" className="cc-sidebar-item" title="Settings">
+          <Settings size={19} />
+          <span>Settings</span>
         </NavLink>
       </nav>
       <div className="cc-sidebar-bottom"><span className="cc-sidebar-dot" /></div>

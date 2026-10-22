@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import dixonLogo from "../../assets/dixon-logo.jpeg";
-import { LogOut } from "lucide-react";
+import { LogOut, UserRound } from "lucide-react";
 import "./ContributorShell.css";
 
 export default function Navbar({ user, onSignOut }) {
@@ -12,6 +12,9 @@ export default function Navbar({ user, onSignOut }) {
         <span>Dixon <strong>Command Center</strong></span>
       </Link>
       <div className="cc-navbar-actions">
+        <Link to="/profile" className="cc-profile-avatar-link" title="Open your profile" aria-label="Open your profile">
+          {user?.profilePicture ? <img src={user.profilePicture} alt="" /> : <span>{user?.fullName?.slice(0,1).toUpperCase() || <UserRound size={17}/>}</span>}
+        </Link>
         <div className="cc-user-pill">
           <span className="cc-user-name">{user?.fullName || "Contributor"}</span>
           <span className="cc-role-pill">{user?.roleName || "Contributor"}</span>

@@ -145,6 +145,7 @@ export default function DailyReport({ session, onSignOut }) {
   const pendingModelEntryId = useRef("");
   const loadSequence = useRef(0);
   const entryIdSequence = useRef(0);
+  const submissionBatch = useRef({ key: "", id: "" });
   const [loadedReportKey, setLoadedReportKey] = useState("");
   const currentReportKey = `${customerId}:${categoryId}:${reportDate}`;
   const reportLoaded = loadedReportKey === currentReportKey;
@@ -193,6 +194,7 @@ export default function DailyReport({ session, onSignOut }) {
       if (!foundCustomer || !foundCategory) throw new Error("Brand or category configuration was not found.");
 
       const statusRows = await api.get(`/daily-reports/line-status?customerId=${customerId}&categoryId=${categoryId}&reportDate=${reportDate}`);
+      const reviewerAnnotations = await api.get(`/daily-reports/annotations?customerId=${customerId}&categoryId=${categoryId}&reportDate=${reportDate}`);
       const catalogLines = Array.isArray(foundCategory.productionLines) ? foundCategory.productionLines : [];
       const mergedLines = catalogLines.map((line) => ({
         ...line,
@@ -228,6 +230,8 @@ export default function DailyReport({ session, onSignOut }) {
               status: item.status || "DRAFT",
               isActive: item.isActive !== false,
               rejectionReason: item.rejectionReason || "",
+              submissionBatchId: item.submissionBatchId || null,
+              annotations: (reviewerAnnotations || []).filter((annotation) => Number(annotation.dailyReportId) === Number(item.dailyReportId)),
               form: { ...EMPTY_FORM, ...item },
               initialForm: { ...EMPTY_FORM, ...item },
               isNew: false,
@@ -247,6 +251,8 @@ export default function DailyReport({ session, onSignOut }) {
       }));
 
       if (sequence !== loadSequence.current) return;
+      const savedBatchId = result.flatMap(([, data]) => data.entries).find((entry) => entry.submissionBatchId)?.submissionBatchId;
+      submissionBatch.current = { key: `${customerId}:${categoryId}:${reportDate}`, id: savedBatchId || "" };
       setCustomer(foundCustomer);
       setCategory(foundCategory);
       setLines(mergedLines);
@@ -456,8 +462,9 @@ export default function DailyReport({ session, onSignOut }) {
       navigate(`/contributor/brands/${customerId}/categories/${nextCategory.categoryId}/report`);
   };
 
-  const buildPayload = (lineId, entry) => ({
+  const buildPayload = (lineId, entry, submissionBatchId = null) => ({
     reportDate,
+    submissionBatchId,
     customerId: Number(customerId), categoryId: Number(categoryId), lineId: Number(lineId), modelId: Number(entry.modelId),
     kpiPlanId: entry.plan?.planId ?? null,
     kpiPlanUpdatedAt: entry.plan?.updatedAt ?? null,
@@ -498,9 +505,16 @@ export default function DailyReport({ session, onSignOut }) {
     }
     setBusy(`${submit ? "submit" : "save"}-${lineId}`); setError(""); setNotice("");
     try {
+      const reportKey = `${customerId}:${categoryId}:${reportDate}`;
+      if (submissionBatch.current.key !== reportKey) submissionBatch.current = { key: reportKey, id: "" };
+      if (submit && !submissionBatch.current.id) {
+        submissionBatch.current.id = globalThis.crypto?.randomUUID?.() || "";
+        if (!submissionBatch.current.id) throw new Error("Secure report submission IDs require a modern browser or HTTPS.");
+      }
+      const batchId = submit ? submissionBatch.current.id : null;
       for (const entry of line.entries) {
         if (!entry.modelId) throw new Error(`Select a model for every column in ${getLineName(lineId)}.`);
-        const saved = await api.post(`/daily-reports/${submit ? "submit" : "draft"}`, buildPayload(lineId, entry));
+        const saved = await api.post(`/daily-reports/${submit ? "submit" : "draft"}`, buildPayload(lineId, entry, batchId));
         const savedStatus = saved?.status || (submit ? "SUBMITTED" : "DRAFT");
         setLineData((current) => {
           const currentLine = current[lineId];
@@ -510,6 +524,7 @@ export default function DailyReport({ session, onSignOut }) {
             : {
                 ...currentEntry,
                 dailyReportId: saved?.dailyReportId ?? currentEntry.dailyReportId,
+                submissionBatchId: saved?.submissionBatchId ?? batchId ?? currentEntry.submissionBatchId,
                 status: savedStatus,
                 isNew: false,
                 initialForm: { ...entry.form },
@@ -1334,6 +1349,7 @@ function MatrixTable({ groups, lines, lineData, onChange, onToggleLine, onAddMod
               <th key={entry.entryId} className="model-head" data-entry-id={entry.entryId}>
                 <div className="model-head-content">
                   <div><span>MODEL</span><strong>{entry.modelName}</strong></div>
+                  {entry.rejectionReason && ["REJECTED", "DRAFT"].includes(entry.status) && <small className="review-general-comment">Reviewer summary: {entry.rejectionReason}</small>}
                   {entry.planStatus === "loading" && <small className="plan-status loading"><Loader2 size={11} className="spin" /> Loading KPI plan…</small>}
                   {entry.planStatus === "missing" && <small className="plan-status missing" title="No monthly plan exists for this plant, customer, category, line, model and month.">{entry.isNew ? "No monthly plan; targets left blank." : "No active monthly plan; saved targets are preserved."}</small>}
                   {entry.planStatus === "error" && <small className="plan-status error" title={entry.planError}>KPI plan unavailable; daily report remains editable.</small>}
@@ -1367,11 +1383,13 @@ function MatrixGroup({ group, columns, lineData, onChange }) {
         return <td className="matrix-cell" key={`${row.label}-${entry.entryId}`}>
           <div className="matrix-values-grid">
             {row.fields.map(({ key, label }) => (
-              <label className={`matrix-value-field ${key === "issueDescription" ? "matrix-value-wide" : ""}`} key={key}>
+              <label className={`matrix-value-field ${key === "issueDescription" ? "matrix-value-wide" : ""} ${entry.annotations?.some((item) => item.fieldKey === key && item.severity === "RED" && !item.resolvedAt) ? "review-field-red" : ""} ${entry.annotations?.some((item) => item.fieldKey === key && item.severity === "YELLOW" && !item.resolvedAt) ? "review-field-yellow" : ""}`} key={key}>
                 <span>{label}</span>
                 {key === "issueDescription"
                   ? <textarea aria-label={`${row.label} ${label}`} value={entry.form?.[key] ?? ""} disabled={disabled} placeholder="Issue / observation" onChange={(event) => onChange(lineId, entry.entryId, key, event.target.value)} />
                   : <input aria-label={`${row.label} ${label}`} type="number" min="0" step="0.01" value={entry.form?.[key] ?? ""} disabled={disabled} placeholder="—" onChange={(event) => onChange(lineId, entry.entryId, key, event.target.value)} />}
+                {(entry.annotations || []).filter((annotation) => annotation.fieldKey === key && !annotation.resolvedAt).map((annotation) => <small className={`review-field-note ${annotation.severity.toLowerCase()}`} key={annotation.annotationId}><strong>{annotation.severity === "RED" ? "Required correction" : "Verify / clarify"}:</strong> {annotation.comment}</small>)}
+                {(entry.annotations || []).filter((annotation) => annotation.fieldKey === key && annotation.resolvedAt).length > 0 && <details className="review-field-history"><summary>Previous review ({entry.annotations.filter((annotation) => annotation.fieldKey === key && annotation.resolvedAt).length})</summary>{entry.annotations.filter((annotation) => annotation.fieldKey === key && annotation.resolvedAt).map((annotation) => <small key={annotation.annotationId}>{annotation.severity}: {annotation.comment} · submitted value: {annotation.correctedValue ?? "unchanged"}</small>)}</details>}
               </label>
             ))}
           </div>

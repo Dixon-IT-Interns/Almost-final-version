@@ -5,6 +5,10 @@ import DashboardPage from "./pages/DashboardPage";
 import ApprovalPage from "./pages/ApprovalPage";
 import ApprovalOverview from "./pages/ApprovalOverview";
 import ApprovalHistory from "./pages/ApprovalHistory";
+import ApprovalDailyReports from "./pages/ApprovalDailyReports";
+import NotificationsPage from "./pages/NotificationsPage";
+import ProfilePage from "./pages/ProfilePage";
+import { api } from "./api";
 import ContributorReports from "./pages/contributor/ContributorReports";
 import ContributorActivity from "./pages/contributor/ContributorActivity";
 import ContributorDashboard from "./pages/contributor/ContributorDashboard";
@@ -35,6 +39,12 @@ function ApproverRoute({ session, children }) {
   return children;
 }
 
+function NotificationsRoute({ session, children }) {
+  if (!session) return <Navigate to="/" replace />;
+  if (!["Approver", "Contributor"].includes(session.user.roleName)) return <Navigate to="/dashboard" replace />;
+  return children;
+}
+
 function AdminRoute({ session, children }) {
   if (!session) return <Navigate to="/" replace />;
   if (!["Admin", "SuperAdmin"].includes(session.user.roleName)) return <Navigate to="/dashboard" replace />;
@@ -62,6 +72,21 @@ function AppRoutes() {
     return () => window.removeEventListener("dcc-session-expired", expireSession);
   }, []);
 
+  useEffect(() => {
+    if (!session?.token) return undefined;
+    let active = true;
+    api.get("/profile").then((profile) => {
+      if (!active) return;
+      setSession((current) => {
+        if (!current || current.token !== session.token) return current;
+        const next = { ...current, user: { ...current.user, ...profile } };
+        localStorage.setItem("dcc-session", JSON.stringify(next));
+        return next;
+      });
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [session?.token]);
+
   const signIn = (nextSession) => {
     localStorage.setItem("dcc-session", JSON.stringify(nextSession));
     localStorage.setItem("dcc-token", nextSession.token);
@@ -72,6 +97,15 @@ function AppRoutes() {
     localStorage.removeItem("dcc-session");
     localStorage.removeItem("dcc-token");
     setSession(null);
+  };
+
+  const updateProfile = (profile) => {
+    setSession((current) => {
+      if (!current) return current;
+      const next = { ...current, user: { ...current.user, ...profile } };
+      localStorage.setItem("dcc-session", JSON.stringify(next));
+      return next;
+    });
   };
 
   const roleName = session?.user?.roleName;
@@ -87,13 +121,18 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={session ? <Navigate to={home} replace /> : <Login onSignIn={signIn} />} />
+      <Route path="/profile" element={<ProtectedRoute session={session}><ProfilePage session={session} onSignOut={signOut} onProfileUpdate={updateProfile}/></ProtectedRoute>} />
 
       <Route path="/contributor/dashboard" element={<ContributorRoute session={session}><ContributorDashboard session={session} onSignOut={signOut}/></ContributorRoute>} />
       <Route path="/contributor/reports" element={<ContributorRoute session={session}><ContributorReports session={session} onSignOut={signOut}/></ContributorRoute>} />
       <Route path="/contributor/activity" element={<ContributorRoute session={session}><ContributorActivity session={session} onSignOut={signOut}/></ContributorRoute>} />
       <Route path="/approvals/overview" element={<ApproverRoute session={session}><ApprovalOverview session={session} onSignOut={signOut}/></ApproverRoute>} />
+      <Route path="/approvals/reports" element={<ApproverRoute session={session}><ApprovalDailyReports session={session} onSignOut={signOut}/></ApproverRoute>} />
+      <Route path="/approvals/analytics" element={<ApproverRoute session={session}><ApprovalOverview analytics session={session} onSignOut={signOut}/></ApproverRoute>} />
       <Route path="/approvals" element={<ApproverRoute session={session}><ApprovalPage session={session} onSignOut={signOut}/></ApproverRoute>} />
       <Route path="/approvals/history" element={<ApproverRoute session={session}><ApprovalHistory session={session} onSignOut={signOut}/></ApproverRoute>} />
+      <Route path="/notifications" element={<NotificationsRoute session={session}><NotificationsPage session={session} onSignOut={signOut}/></NotificationsRoute>} />
+      <Route path="/approvals/notifications" element={<Navigate to="/notifications" replace />} />
       <Route path="/viewer" element={<ViewerRoute session={session}><ViewerDashboard session={session} onSignOut={signOut}/></ViewerRoute>} />
       <Route path="/viewer/exceptions" element={<ViewerRoute session={session}><ViewerInsights mode="exceptions" session={session} onSignOut={signOut}/></ViewerRoute>} />
       <Route path="/viewer/comparison" element={<ViewerRoute session={session}><ViewerInsights mode="comparison" session={session} onSignOut={signOut}/></ViewerRoute>} />

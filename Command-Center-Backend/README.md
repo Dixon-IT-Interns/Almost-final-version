@@ -2,6 +2,8 @@
 
 The API uses the existing SQL Server schema in `Dixon_Command_Center`. Create or verify tables with `Database/schema.sql`. For an existing database, run `Database/007_plant_customer.sql`, then `Database/008_super_admin_hierarchy.sql`, before `Database/seed.sql` or starting the updated API. The first migration backfills plant/customer mappings. The second adds the `SuperAdmin` role and promotes the first existing Admin to SuperAdmin; remaining Admins are plant-scoped. Then use `Database/seed.sql` for the roles, plant, plant/customer assignments, categories, models, and production lines. The seed is rerunnable and includes a guarded correction for the existing Acer-SMT/Gigabyte-FATP line mapping error. On a new database, run `Database/schema.sql` and `Database/seed.sql`; initial setup creates the first SuperAdmin.
 
+For an existing database, run `Database/013_user_profile.sql` to add phone verification fields and profile photos before using the profile page. Run `Database/014_approval_batches_and_annotations.sql` to add submission-cycle IDs and field-level review audit before using consolidated Approver reviews.
+
 ## Local configuration
 
 Set the SQL Server connection string in the environment so credentials are not committed:
@@ -19,6 +21,17 @@ dotnet run --launch-profile http
 
 Outside development, `Jwt:Secret` is required. Configure `Frontend:Origin` if Vite is not running at `http://localhost:5173`.
 
+Phone number changes are sent by SMS and saved only after a successful OTP verification. Configure Twilio-compatible credentials as environment variables before enabling this flow:
+
+```powershell
+$env:Sms__AccountSid = "your-account-sid"
+$env:Sms__AuthToken = "your-auth-token"
+$env:Sms__FromPhoneNumber = "+1XXXXXXXXXX"
+$env:Sms__OtpSigningKey = "a-long-random-secret"
+```
+
+`Sms:OtpSigningKey` protects stored OTP hashes; `Jwt:Secret` is used as a fallback. SMS provider credentials are not stored in source control. Codes expire after five minutes, with a resend cooldown and hourly limit.
+
 ## API routes
 
 - `GET /api/auth/setup-status` reports whether first-admin setup is required.
@@ -29,6 +42,8 @@ Outside development, `Jwt:Secret` is required. Configure `Frontend:Origin` if Vi
 - `GET /api/admin/catalog/plants/{id}/customers` and `PUT /api/admin/catalog/plants/{id}/customers` manage a plant's customer associations (Admin role).
 - `GET /api/admin/users`, `/roles`, and `/plants` are scoped to the Admin's plant; SuperAdmins can manage users across plants.
 - `POST /api/admin/users` lets SuperAdmins create plant Admins. Plant Admins can create only non-admin roles in their own plant.
+- `GET /api/approver/dashboard`, `/daily-reports`, and `/activity` return plant/customer-assigned metrics, paginated report entries, and review events for Approver pages.
+- `GET /api/approvals/batch/{id}` returns all submitted line/model entries for a reporting batch. Its `/approve` and `/reject` actions record one transactional batch decision; reject requests can contain RED/YELLOW field annotations.
 
 Run the frontend from `Command-Center-Frontend` with `npm run dev`. Set `VITE_API_URL` if the API is hosted at a different URL.
 
@@ -45,6 +60,8 @@ API:
 - `GET /api/contributor/dashboard?days=7` — contributor activity/history.
 
 Plant customer access is controlled by `PlantCustomer`; individual user assignments remain controlled by `UserCustomer`. Both are enforced by the backend catalog/reporting APIs.
+
+This backend uses parameterized ADO.NET SQL rather than EF Core entities/migrations. Apply numbered, idempotent SQL scripts for existing SQL Server databases. New submissions share a batch key within plant/date/customer/category/contributor scope; older pending entries retain one-row review behavior. Field annotations preserve the report row, model, KPI field, original value, reviewer comment, severity, and corrected value after resubmission.
 
 ## Daily Performance Excel import
 

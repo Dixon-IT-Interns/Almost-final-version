@@ -910,7 +910,9 @@ public sealed class DailyReportsController(
 
                 dr.UPPHTarget,
                 dr.OSDTarget,
-                dr.OTTarget
+                dr.OTTarget,
+                dr.SubmissionBatchId,
+                dr.SubmissionBatchEnforced
 
             FROM DailyReport dr
 
@@ -1052,11 +1054,32 @@ public sealed class DailyReportsController(
 
                 upphTarget = GetDecimal(reader, 36),
                 osdTarget = GetDecimal(reader, 37),
-                otTarget = GetDecimal(reader, 38)
+                otTarget = GetDecimal(reader, 38),
+                submissionBatchId = reader.IsDBNull(39) ? (Guid?)null : reader.GetGuid(39),
+                submissionBatchEnforced = reader.GetBoolean(40)
             });
         }
 
         return Ok(entries);
+    }
+
+    [HttpGet("annotations")]
+    public async Task<IActionResult> GetAnnotations([FromQuery] int customerId,[FromQuery] int categoryId,[FromQuery] DateTime reportDate,CancellationToken cancellationToken)
+    {
+        if(!User.IsInRole("Contributor"))return Forbid();
+        if(!await HasCustomerAccessAsync(customerId,cancellationToken))return Forbid();
+        await using var connection=await connectionFactory.OpenAsync(cancellationToken);
+        const string sql="""
+            SELECT a.AnnotationId,a.DailyReportId,a.FieldKey,a.Severity,a.Comment,a.OriginalValue,a.CorrectedValue,a.CreatedAt,a.ResolvedAt,
+                   creator.FullName,resolver.FullName,pl.LineName,m.ModelName
+            FROM ReportFieldAnnotation a INNER JOIN DailyReport dr ON dr.DailyReportId=a.DailyReportId
+            INNER JOIN [User] creator ON creator.UserId=a.CreatedBy LEFT JOIN [User] resolver ON resolver.UserId=a.ResolvedBy
+            INNER JOIN ProductionLine pl ON pl.LineId=dr.LineId LEFT JOIN Model m ON m.ModelId=dr.ModelId
+            WHERE dr.PlantId=@PlantId AND dr.CustomerId=@CustomerId AND dr.CategoryId=@CategoryId AND dr.ReportDate=@ReportDate AND dr.CreatedBy=@UserId
+            ORDER BY a.CreatedAt,a.AnnotationId;
+            """;
+        await using var command=new SqlCommand(sql,connection);Add(command,"@PlantId",SqlDbType.Int,GetPlantId());Add(command,"@CustomerId",SqlDbType.Int,customerId);Add(command,"@CategoryId",SqlDbType.Int,categoryId);Add(command,"@ReportDate",SqlDbType.Date,reportDate.Date);Add(command,"@UserId",SqlDbType.Int,GetUserId());
+        var rows=new List<object>();await using var reader=await command.ExecuteReaderAsync(cancellationToken);while(await reader.ReadAsync(cancellationToken))rows.Add(new{annotationId=reader.GetInt64(0),dailyReportId=reader.GetInt32(1),fieldKey=reader.GetString(2),severity=reader.GetString(3),comment=reader.GetString(4),originalValue=reader.IsDBNull(5)?null:reader.GetString(5),correctedValue=reader.IsDBNull(6)?null:reader.GetString(6),createdAt=reader.GetDateTime(7),resolvedAt=reader.IsDBNull(8)?(DateTime?)null:reader.GetDateTime(8),createdBy=reader.GetString(9),resolvedBy=reader.IsDBNull(10)?null:reader.GetString(10),lineName=reader.GetString(11),modelName=reader.IsDBNull(12)?null:reader.GetString(12)});return Ok(rows);
     }
 
 
@@ -1371,6 +1394,17 @@ public sealed class DailyReportsController(
 
         try
         {
+            if (request.SubmissionBatchId is Guid requestedBatchId)
+            {
+                const string batchScopeSql = "SELECT COUNT(1) FROM DailyReport WITH (UPDLOCK,HOLDLOCK) WHERE SubmissionBatchId=@BatchId AND (PlantId<>@PlantId OR ReportDate<>@ReportDate OR CustomerId<>@CustomerId OR CategoryId<>@CategoryId OR CreatedBy<>@UserId);";
+                await using var batchScope = new SqlCommand(batchScopeSql, connection, transaction);
+                Add(batchScope,"@BatchId",SqlDbType.UniqueIdentifier,requestedBatchId); Add(batchScope,"@PlantId",SqlDbType.Int,GetPlantId()); Add(batchScope,"@ReportDate",SqlDbType.Date,request.ReportDate.Date); Add(batchScope,"@CustomerId",SqlDbType.Int,request.CustomerId); Add(batchScope,"@CategoryId",SqlDbType.Int,request.CategoryId); Add(batchScope,"@UserId",SqlDbType.Int,userId);
+                if (Convert.ToInt32(await batchScope.ExecuteScalarAsync(cancellationToken)) != 0)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return BadRequest(new { message="The submission batch key is already assigned to another report date or reporting scope." });
+                }
+            }
             var existing =
                 await FindReportAsync(
                     connection,
@@ -1379,6 +1413,7 @@ public sealed class DailyReportsController(
                     cancellationToken);
 
             int dailyReportId;
+            var priorStatus = existing?.ApprovalStatus == "REJECTED" || existing?.Status == "REJECTED" ? "REJECTED" : existing?.Status;
 
             if (existing.HasValue)
             {
@@ -1416,6 +1451,8 @@ public sealed class DailyReportsController(
                             ModelId = @ModelId,
                             IsActive = 1,
                             Status = @Status,
+                            SubmissionBatchId = CASE WHEN @Status = 'SUBMITTED' AND @SubmissionBatchId IS NOT NULL THEN @SubmissionBatchId ELSE SubmissionBatchId END,
+                            SubmissionBatchEnforced = CASE WHEN @Status = 'SUBMITTED' AND @SubmissionBatchId IS NOT NULL THEN 1 ELSE SubmissionBatchEnforced END,
 
                             SubmittedAt =
                                 CASE
@@ -1448,6 +1485,7 @@ public sealed class DailyReportsController(
                     "@DailyReportId",
                     SqlDbType.Int,
                     dailyReportId);
+                Add(update,"@SubmissionBatchId",SqlDbType.UniqueIdentifier,request.SubmissionBatchId);
 
                 await update.ExecuteNonQueryAsync(
                     cancellationToken);
@@ -1468,6 +1506,8 @@ public sealed class DailyReportsController(
                             CreatedBy,
                             Status,
                             IsActive,
+                            SubmissionBatchId,
+                            SubmissionBatchEnforced,
                             SubmittedAt,
                             CreatedAt,
                             UpdatedAt
@@ -1485,6 +1525,8 @@ public sealed class DailyReportsController(
                             @CreatedBy,
                             @Status,
                             1,
+                            CASE WHEN @Status = 'SUBMITTED' THEN @SubmissionBatchId ELSE NULL END,
+                            CASE WHEN @Status = 'SUBMITTED' AND @SubmissionBatchId IS NOT NULL THEN 1 ELSE 0 END,
 
                             CASE
                                 WHEN @Status = 'SUBMITTED'
@@ -1546,6 +1588,7 @@ public sealed class DailyReportsController(
                     "@Status",
                     SqlDbType.VarChar,
                     status);
+                Add(insert,"@SubmissionBatchId",SqlDbType.UniqueIdentifier,request.SubmissionBatchId);
 
                 dailyReportId =
                     Convert.ToInt32(
@@ -1587,12 +1630,15 @@ public sealed class DailyReportsController(
 
             if (status == "SUBMITTED")
             {
+                await ResolveReportAnnotationsAsync(connection,transaction,dailyReportId,userId,cancellationToken);
                 await UpsertApprovalQueueAsync(
                     connection,
                     transaction,
                     dailyReportId,
                     userId,
                     cancellationToken);
+                const string activitySql="INSERT INTO ReportApproval(DailyReportId,ActionBy,ActionType,Comments,ActionAt) VALUES(@DailyReportId,@UserId,@Action,NULL,SYSUTCDATETIME());";
+                await using var activity=new SqlCommand(activitySql,connection,transaction);Add(activity,"@DailyReportId",SqlDbType.Int,dailyReportId);Add(activity,"@UserId",SqlDbType.Int,userId);Add(activity,"@Action",SqlDbType.VarChar,priorStatus=="REJECTED"?"RESUBMITTED":"SUBMITTED");await activity.ExecuteNonQueryAsync(cancellationToken);
             }
 
             await transaction.CommitAsync(
@@ -1606,6 +1652,8 @@ public sealed class DailyReportsController(
                         : "Daily report draft saved.",
 
                 dailyReportId,
+
+                submissionBatchId = status == "SUBMITTED" ? request.SubmissionBatchId : null,
 
                 status
             });
@@ -1717,7 +1765,7 @@ public sealed class DailyReportsController(
     // FIND EXISTING REPORT
     // ============================================================
 
-    private async Task<(int Id, string Status)?> FindReportAsync(
+    private async Task<(int Id, string Status, string? ApprovalStatus)?> FindReportAsync(
         SqlConnection connection,
         SqlTransaction transaction,
         DailyReportRequest request,
@@ -1727,17 +1775,19 @@ public sealed class DailyReportsController(
             new SqlCommand(
                 """
                 SELECT TOP (1)
-                    DailyReportId,
-                    Status
+                    dr.DailyReportId,
+                    dr.Status,
+                    aq.Status
 
-                FROM DailyReport WITH (UPDLOCK, HOLDLOCK)
+                FROM DailyReport dr WITH (UPDLOCK, HOLDLOCK)
+                LEFT JOIN ApprovalQueue aq ON aq.DailyReportId=dr.DailyReportId
 
-                WHERE PlantId = @PlantId
-                  AND ReportDate = @ReportDate
-                  AND CustomerId = @CustomerId
-                  AND CategoryId = @CategoryId
-                  AND LineId = @LineId
-                  AND ModelId = @ModelId;
+                WHERE dr.PlantId = @PlantId
+                  AND dr.ReportDate = @ReportDate
+                  AND dr.CustomerId = @CustomerId
+                  AND dr.CategoryId = @CategoryId
+                  AND dr.LineId = @LineId
+                  AND dr.ModelId = @ModelId;
                 """,
                 connection,
                 transaction);
@@ -1790,7 +1840,8 @@ public sealed class DailyReportsController(
 
         return (
             reader.GetInt32(0),
-            reader.GetString(1)
+            reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2)
         );
     }
 
@@ -2315,6 +2366,30 @@ public sealed class DailyReportsController(
     // CUSTOMER ACCESS
     // ============================================================
 
+    private static readonly IReadOnlyDictionary<string,string> AnnotationFieldColumns = new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["monthPlan"]="MonthPlan",["monthActual"]="MonthActual",["productionPlan"]="ProductionPlan",["productionActual"]="ProductionActual",
+        ["uphTarget"]="UPHTarget",["uphActual"]="UPHActual",["upphTarget"]="UPPHTarget",["upphInstalled"]="UPPHInstalled",["upphActual"]="UPPHActual",
+        ["cphTarget"]="CPHTarget",["cphActual"]="CPHActual",["fpyTarget"]="FPYTarget",["fpyActual"]="FPYActual",["ftyTarget"]="FTYTarget",["ftyActual"]="FTYActual",
+        ["rtyTarget"]="RTYTarget",["rtyActual"]="RTYActual",["osdTarget"]="OSDTarget",["osdReportingDateValue"]="OSDReportingDateValue",["osdReportingDatePercent"]="OSDReportingDatePercent",
+        ["osdMtdValue"]="OSDMTDValue",["osdMtdPercent"]="OSDMTDPercent",["otTarget"]="OTTarget",["plannedOTManhours"]="PlannedOTManhours",["unplannedOTManhours"]="UnplannedOTManhours",
+        ["actualOTManhours"]="ActualOTManhours",["openWOQty"]="OpenWOQty",["over7DaysWOBalanceQty"]="Over7DaysWOBalanceQty",["dailyTRCInQty"]="DailyTRCInQty",["dailyTRCOutQty"]="DailyTRCOutQty",
+        ["trcOverallFailureInflowPercent"]="TRCOverallFailureInflowPercent",["trcLyingOver3DaysCr"]="TRCLyingOver3DaysCr",["issueDescription"]="IssueDescription"
+    };
+
+    private static async Task ResolveReportAnnotationsAsync(SqlConnection connection,SqlTransaction transaction,int reportId,int userId,CancellationToken cancellationToken)
+    {
+        var fields=new List<string>();
+        const string select="SELECT DISTINCT FieldKey FROM ReportFieldAnnotation WITH (UPDLOCK,HOLDLOCK) WHERE DailyReportId=@ReportId AND ResolvedAt IS NULL;";
+        await using(var command=new SqlCommand(select,connection,transaction)){Add(command,"@ReportId",SqlDbType.Int,reportId);await using var reader=await command.ExecuteReaderAsync(cancellationToken);while(await reader.ReadAsync(cancellationToken))fields.Add(reader.GetString(0));}
+        foreach(var field in fields)
+        {
+            if(!AnnotationFieldColumns.TryGetValue(field,out var column))continue;
+            const string sqlTemplate="UPDATE a SET CorrectedValue=CONVERT(nvarchar(4000),dr.{0}),ResolvedBy=@UserId,ResolvedAt=SYSUTCDATETIME() FROM ReportFieldAnnotation a INNER JOIN DailyReport dr ON dr.DailyReportId=a.DailyReportId WHERE a.DailyReportId=@ReportId AND a.FieldKey=@FieldKey AND a.ResolvedAt IS NULL;";
+            await using var update=new SqlCommand(string.Format(System.Globalization.CultureInfo.InvariantCulture,sqlTemplate,$"[{column}]"),connection,transaction);Add(update,"@UserId",SqlDbType.Int,userId);Add(update,"@ReportId",SqlDbType.Int,reportId);Add(update,"@FieldKey",SqlDbType.VarChar,field);await update.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
     private async Task<bool> HasCustomerAccessAsync(
         int customerId,
         CancellationToken cancellationToken)
@@ -2508,6 +2583,8 @@ public sealed class LineStatusRequest
 public sealed class DailyReportRequest
 {
     public DateTime ReportDate { get; set; }
+
+    public Guid? SubmissionBatchId { get; set; }
 
     public int CustomerId { get; set; }
 

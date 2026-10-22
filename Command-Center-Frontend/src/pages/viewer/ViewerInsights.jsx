@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, RefreshCw, Search, AlertTriangle, ClipboardCheck, CalendarDays, FileSpreadsheet } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../../api";
-import Header from "../../components/Header";
-import AppFooter from "../../components/AppFooter";
+import PortalLayout from "../../components/PortalLayout";
 import "./ViewerInsights.css";
 
 const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -132,15 +131,7 @@ export default function ViewerInsights({ mode = "exceptions", session, onSignOut
     finally { setExporting(false); }
   }
 
-  return <div className="viewer-insights-page">
-    <Header user={session?.user} onSignOut={onSignOut} />
-    <div className="viewer-module-nav-wrap"><nav className="viewer-module-nav" aria-label="Viewer pages">
-      <a href="/viewer">Dashboard</a>
-      <a href="/viewer/exceptions">Operations Exceptions</a>
-      <a href="/viewer/comparison">Period Comparison</a>
-      <a href="/viewer/tracker">Report Tracker</a>
-      <a href="/viewer/reports">Report Center</a>
-    </nav></div>
+  return <PortalLayout user={session?.user} onSignOut={onSignOut}><div className="viewer-insights-page">
     <main className="vi-main">
       <div className="vi-breadcrumb"><Link to="/viewer">Viewer Dashboard</Link><span>/</span><span>{config.title}</span></div>
       <section className="vi-heading">
@@ -180,8 +171,7 @@ export default function ViewerInsights({ mode = "exceptions", session, onSignOut
       {loading && <div className="vi-loading">Loading Viewer records…</div>}
       <p className="vi-footnote">Read-only Viewer access. Data is limited to the plant and customer scope allowed by the existing backend authorization.</p>
     </main>
-    <AppFooter />
-  </div>;
+  </div></PortalLayout>;
 }
 function Kpi({ icon, label, value }) { return <article className="vi-kpi">{icon && <span className="vi-kpi-icon">{icon}</span>}<span>{label}</span><strong>{value}</strong></article>; }
 function Panel({ title, subtitle, children }) { return <section className="vi-panel"><div className="vi-panel-heading"><div><h2>{title}</h2><p>{subtitle}</p></div></div>{children}</section>; }
