@@ -231,16 +231,26 @@ public sealed class AdminController(
         int id,
         CancellationToken cancellationToken)
     {
-        var changed = await users.SetActiveAsync(
-            id,
-            false,
-            IsSuperAdmin ? null : CurrentPlantId,
-            IsSuperAdmin,
-            cancellationToken);
+        try
+        {
+            var deleted = await users.DeleteAsync(
+                id,
+                IsSuperAdmin ? null : CurrentPlantId,
+                IsSuperAdmin,
+                cancellationToken);
 
-        return changed
-            ? Ok(new { message = "User deactivated." })
-            : NotFound();
+            return deleted
+                ? Ok(new { message = "User deleted." })
+                : NotFound();
+        }
+        catch (SqlException exception) when (exception.Number == 547)
+        {
+            return Conflict(new
+            {
+                message =
+                    "This user cannot be deleted because related reports or approval history still reference the account."
+            });
+        }
     }
 
     [HttpPut("users/{id:int}/customers")]

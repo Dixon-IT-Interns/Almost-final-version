@@ -59,6 +59,11 @@
 .report-upload-type>span{color:var(--muted);font:800 8px var(--font-family-base);letter-spacing:.08em}
 .report-upload-type select{height:35px;min-width:190px;padding:0 9px;border:1px solid var(--border);border-radius:8px;background:var(--color-surface);color:var(--text);font:750 11px var(--font-family-base)}
 .report-upload-type select:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.report-lock-upload{white-space:nowrap}
+.upload-section-status{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.upload-section-status span{padding:6px 9px;border:1px solid var(--border);border-radius:999px;font:750 10px var(--font-family-base)}
+.upload-section-status span.open{color:var(--muted);background:var(--color-surface)}
+.upload-section-status span.locked{color:var(--success);border-color:var(--success);background:var(--color-success-soft)}
 @media(max-width:760px){
   .report-title-row{flex-wrap:wrap}
   .report-category-switch{margin-left:0;padding:0}
@@ -78,3 +83,4 @@
 .daily-matrix .matrix-value-field{min-width:0}
 .daily-matrix .matrix-value-wide{grid-column:1/-1}
 .matrix-value-field.review-field-red{padding:5px;border:1px solid #dc2626;border-radius:8px;background:#fff1f2}.matrix-value-field.review-field-yellow{padding:5px;border:1px solid #d97706;border-radius:8px;background:#fffbeb}.review-field-note{display:block;margin-top:4px;font-size:10px;line-height:1.4;font-weight:600}.review-field-note.red{color:#b91c1c}.review-field-note.yellow{color:#92400e}.review-general-comment{display:block;max-width:220px;margin-top:5px;color:#9f1239;font-size:10px;line-height:1.4;white-space:normal}.review-field-history{margin-top:5px;color:var(--muted);font-size:9px}.review-field-history summary{cursor:pointer}.review-field-history small{display:block;margin-top:3px;line-height:1.4}
+.daily-matrix .matrix-line-toggle{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:1px solid var(--color-border);border-radius:8px;background:var(--color-surface);color:var(--muted);cursor:pointer}.daily-matrix .matrix-line-toggle:hover:not(:disabled){border-color:var(--primary);color:var(--primary)}.daily-matrix .matrix-line-toggle:disabled{opacity:.45;cursor:not-allowed}.daily-matrix .line-group-head.is-line-inactive{background:#fff1f2}

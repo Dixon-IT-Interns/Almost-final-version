@@ -44,6 +44,7 @@ $env:Sms__OtpSigningKey = "a-long-random-secret"
 - `POST /api/admin/users` lets SuperAdmins create plant Admins. Plant Admins can create only non-admin roles in their own plant.
 - `GET /api/approver/dashboard`, `/daily-reports`, and `/activity` return plant/customer-assigned metrics, paginated report entries, and review events for Approver pages.
 - `GET /api/approvals/batch/{id}` returns all submitted line/model entries for a reporting batch. Its `/approve` and `/reject` actions record one transactional batch decision; reject requests can contain RED/YELLOW field annotations.
+- Viewer reporting supports date-range trends scoped to the selected plant, brand and process. The period comparison page compares a selected month or year with the preceding period. `GET /api/viewer/export` fills the first sheet of `Templates/DixonDailyReportTemplate.xlsx`, retains the supplied workbook's styles and remaining sheet layouts, and clears their sample report values; the template is copied to build and publish output.
 
 Run the frontend from `Command-Center-Frontend` with `npm run dev`. Set `VITE_API_URL` if the API is hosted at a different URL.
 
@@ -67,4 +68,6 @@ This backend uses parameterized ADO.NET SQL rather than EF Core entities/migrati
 
 On the Daily Report page, choose FATP or SMT in the process dropdown before uploading the workbook. The importer selects the matching UPPH (FATP) or CPH (SMT) section; if both metrics are present in one table, it uses the populated metric for each row. It matches rows using the selected customer, line, SAP location, and model, and skips rows that belong to the other process. CPH target subheadings may be `Target`, `Installed`, or `Ins`.
 
-Quality, overtime, and TRC columns are optional in the Daily Performance workbook. Fields that are not present are left unchanged in the form. Standalone WO Closure, Quality, and IE workbooks are not imported through this Daily Report upload because WO Closure is an aggregate report without line/model keys and needs a separate destination.
+For the supplied September 29, 2026 report, the Gigabyte `FA-06 / PVT Build` row is in the FATP section. Run `Database/017_gigabyte_fatp_pvt_build_model.sql` on existing databases so its model is available to the importer. The workbook's `SMT-03 / AIO` row is not a Gigabyte row.
+
+Quality, overtime, and TRC columns are optional in the Daily Performance workbook. The production importer ignores Open WO, >7 Days WO, and WIP Lying >3/>7 Days fields; those operational fields remain unchanged in the form. Other fields not present are also left unchanged. Standalone WO Closure, Quality, and IE workbooks are not imported through this Daily Report upload because WO Closure is an aggregate report without line/model keys and needs a separate destination.

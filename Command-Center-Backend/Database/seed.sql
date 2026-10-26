@@ -50,7 +50,8 @@
         ('HP', 'AIO'), ('HP', 'NB'), ('HP', 'NB(Sebastian)'), ('HP', 'AIO/NB'),
         ('ASUS', 'X VAPB'), ('ASUS', 'X,F, M Series'), ('ASUS', 'E Series'),
         ('ASUS', 'X Series (3100)'), ('ASUS', 'X Series (4100)'),
-        ('Acer', 'Travel lite'), ('Gigabyte', 'Gigabyte Model A')
+        ('Acer', 'Travel lite'), ('Gigabyte', 'Gigabyte Model A'),
+        ('Gigabyte', 'PVT Build')
     ) AS names(CustomerName, ModelName)
     INNER JOIN Customer c ON c.CustomerName = names.CustomerName
     WHERE NOT EXISTS (
