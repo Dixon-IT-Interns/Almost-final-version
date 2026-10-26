@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using ClosedXML.Excel;
 using Dixon.CommandCenter.API.Data;
+using Dixon.CommandCenter.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -151,54 +152,29 @@ public sealed class ViewerController(ViewerRepository viewer) : ControllerBase
             return Forbid();
         }
 
+        var templatePath = Path.Combine(
+            AppContext.BaseDirectory, "Templates", "DixonDailyReportTemplate.xlsx");
+        if (!System.IO.File.Exists(templatePath))
+        {
+            return Problem(
+                "The styled daily report template is not available on the server.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
         var progress = await viewer.GetProgressAsync(
             selectedPlantId, customerId, process, reportDate.Value, cancellationToken);
-        using var workbook = new XLWorkbook();
-        var sheet = workbook.Worksheets.Add("Line Work Progress");
-        var headers = new[]
-        {
-            "Customer", "Process", "Line No.", "SAP Location", "Model", "Status",
-            "Month Plan", "Month Actual", "Production Plan", "Production Actual",
-            "UPH Target", "UPH Actual", "UPPH Installed", "UPPH Actual",
-            "FPY Target", "FPY Actual", "FTY Target", "FTY Actual", "RTY Target", "RTY Actual",
-            "OS&D Reporting Date Value", "OS&D Reporting Date %",
-            "OS&D MTD Value", "OS&D MTD %",
-            "Actual OT", "Planned OT", "Unplanned OT", "Open WO Qty", ">7 Days WO",
-            "Daily TRC In", "Daily TRC Out", "TRC Overall Failure %",
-            "TRC Lying >3 Days", "Issue Description"
-        };
+        await using var templateFile = System.IO.File.OpenRead(templatePath);
+        await using var templateStream = new MemoryStream();
+        await templateFile.CopyToAsync(templateStream, cancellationToken);
+        ExcelWorkbookCompatibility.RemoveUnsupportedInlineListValidations(templateStream);
+        using var workbook = new XLWorkbook(templateStream);
+        var sheet = workbook.Worksheet(1);
+        sheet.Cell("B2").Value = reportDate.Value.Date;
+        PopulateReportSection(sheet, progress.Lines, "FATP");
+        PopulateReportSection(sheet, progress.Lines, "SMT");
+        ClearTemplateSampleRows(workbook);
+        workbook.Worksheet(3).Cell("D2").Value = reportDate.Value.Date;
 
-        for (var column = 0; column < headers.Length; column++)
-        {
-            sheet.Cell(1, column + 1).Value = headers[column];
-        }
-
-        for (var row = 0; row < progress.Lines.Count; row++)
-        {
-            var line = progress.Lines[row];
-            var excelRow = row + 2;
-            var values = new object?[]
-            {
-                line.CustomerName, line.Process, line.LineName, line.SAPLocation, line.ModelName, line.Status,
-                line.MonthPlan, line.MonthActual, line.ProductionPlan, line.ProductionActual,
-                line.UPHTarget, line.UPHActual, line.UPPHInstalled, line.UPPHActual,
-                line.FPYTarget, line.FPYActual, line.FTYTarget, line.FTYActual, line.RTYTarget, line.RTYActual,
-                line.OSDReportingDateValue, line.OSDReportingDatePercent,
-                line.OSDMTDValue, line.OSDMTDPercent,
-                line.ActualOTManhours, line.PlannedOTManhours, line.UnplannedOTManhours,
-                line.OpenWOQty, line.Over7DaysWOBalanceQty,
-                line.DailyTRCInQty, line.DailyTRCOutQty, line.TRCOverallFailureInflowPercent,
-                line.TRCLyingOver3DaysCr, line.IssueDescription
-            };
-
-            for (var column = 0; column < values.Length; column++)
-            {
-                SetCellValue(sheet.Cell(excelRow, column + 1), values[column]);
-            }
-        }
-
-        sheet.Row(1).Style.Font.Bold = true;
-        sheet.Columns().AdjustToContents();
         await using var stream = new MemoryStream();
         workbook.SaveAs(stream);
 
@@ -247,5 +223,141 @@ public sealed class ViewerController(ViewerRepository viewer) : ControllerBase
             default:
                 throw new InvalidOperationException($"Unsupported Excel cell value type: {value.GetType().Name}.");
         }
+    }
+
+    private static void PopulateReportSection(
+        IXLWorksheet sheet,
+        IReadOnlyList<ViewerLineProgress> lines,
+        string process)
+    {
+        var headerRow = Enumerable.Range(1, sheet.LastRowUsed()?.RowNumber() ?? 1)
+            .FirstOrDefault(row =>
+            {
+                var isHeader = string.Equals(
+                        sheet.Cell(row, 1).GetString().Trim(), "Line No.", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(
+                        sheet.Cell(row, 3).GetString().Trim(), "Customer", StringComparison.OrdinalIgnoreCase);
+                var metric = sheet.Cell(row, 11).GetString();
+                return isHeader && (process == "FATP"
+                    ? metric.Contains("UPPH", StringComparison.OrdinalIgnoreCase)
+                    : metric.Contains("CPH", StringComparison.OrdinalIgnoreCase));
+            });
+        if (headerRow == 0)
+        {
+            throw new InvalidOperationException($"The daily report template has no {process} section.");
+        }
+
+        var totalRow = Enumerable.Range(headerRow + 2, (sheet.LastRowUsed()?.RowNumber() ?? headerRow + 2) - headerRow - 1)
+            .FirstOrDefault(row => string.Equals(
+                sheet.Cell(row, 1).GetString().Trim(), "Total", StringComparison.OrdinalIgnoreCase));
+        if (totalRow == 0)
+        {
+            throw new InvalidOperationException($"The daily report template has no {process} totals row.");
+        }
+
+        var dataStart = headerRow + 2;
+        var capacity = totalRow - dataStart;
+        var reportLines = lines
+            .Where(line => line.DailyReportId.HasValue && line.Process == process)
+            .ToArray();
+        var additionalRows = Math.Max(0, reportLines.Length - capacity);
+        var lastColumn = 33;
+
+        for (var row = dataStart; row < totalRow; row++)
+        {
+            for (var column = 1; column <= lastColumn; column++)
+                sheet.Cell(row, column).Clear(XLClearOptions.Contents);
+        }
+
+        if (additionalRows > 0)
+        {
+            var styleSource = totalRow - 1;
+            var firstInsertedRow = totalRow;
+            var sourceHeight = sheet.Row(styleSource).Height;
+            sheet.Row(totalRow).InsertRowsAbove(additionalRows);
+            for (var row = firstInsertedRow; row < firstInsertedRow + additionalRows; row++)
+            {
+                sheet.Row(row).Height = sourceHeight;
+                for (var column = 1; column <= lastColumn; column++)
+                {
+                    sheet.Cell(row, column).Clear(XLClearOptions.Contents);
+                    sheet.Cell(row, column).Style = sheet.Cell(styleSource, column).Style;
+                }
+            }
+            totalRow += additionalRows;
+        }
+
+        for (var index = 0; index < reportLines.Length; index++)
+            WriteReportLine(sheet, dataStart + index, reportLines[index], process);
+
+        for (var column = 1; column <= lastColumn; column++)
+        {
+            if (column != 1)
+                sheet.Cell(totalRow, column).Clear(XLClearOptions.Contents);
+        }
+
+        SetTotal(sheet, totalRow, 5, reportLines, line => line.MonthPlan);
+        SetTotal(sheet, totalRow, 6, reportLines, line => line.MonthActual);
+        SetTotal(sheet, totalRow, 7, reportLines, line => line.ProductionPlan);
+        SetTotal(sheet, totalRow, 8, reportLines, line => line.ProductionActual);
+        SetTotal(sheet, totalRow, 19, reportLines, line => line.OSDReportingDateValue);
+        SetTotal(sheet, totalRow, 21, reportLines, line => line.OSDMTDValue);
+        SetTotal(sheet, totalRow, 23, reportLines, line => line.PlannedOTManhours);
+        SetTotal(sheet, totalRow, 24, reportLines, line => line.UnplannedOTManhours);
+        SetTotal(sheet, totalRow, 25, reportLines, line => line.OpenWOQty);
+        SetTotal(sheet, totalRow, 26, reportLines, line => line.Over7DaysWOBalanceQty);
+        SetTotal(sheet, totalRow, 27, reportLines, line => line.DailyTRCInQty);
+        SetTotal(sheet, totalRow, 28, reportLines, line => line.DailyTRCOutQty);
+        SetTotal(sheet, totalRow, 30, reportLines, line => line.TRCLyingOver3DaysCr);
+    }
+
+    private static void WriteReportLine(
+        IXLWorksheet sheet,
+        int row,
+        ViewerLineProgress line,
+        string process)
+    {
+        var values = new object?[]
+        {
+            line.LineName, line.SAPLocation, line.CustomerName, line.ModelName,
+            line.MonthPlan, line.MonthActual, line.ProductionPlan, line.ProductionActual,
+            line.UPHTarget, line.UPHActual,
+            process == "FATP" ? line.UPPHInstalled : line.CPHTarget,
+            process == "FATP" ? line.UPPHActual : line.CPHActual,
+            line.FPYTarget, line.FPYActual, line.FTYTarget, line.FTYActual, line.RTYTarget, line.RTYActual,
+            line.OSDReportingDateValue, line.OSDReportingDatePercent,
+            line.OSDMTDValue, line.OSDMTDPercent,
+            line.PlannedOTManhours, line.UnplannedOTManhours,
+            line.OpenWOQty, line.Over7DaysWOBalanceQty,
+            line.DailyTRCInQty, line.DailyTRCOutQty,
+            line.TRCOverallFailureInflowPercent, line.TRCLyingOver3DaysCr, line.IssueDescription
+        };
+
+        for (var index = 0; index < values.Length; index++)
+            SetCellValue(sheet.Cell(row, index + 1), values[index]);
+    }
+
+    private static void SetTotal(
+        IXLWorksheet sheet,
+        int row,
+        int column,
+        IReadOnlyList<ViewerLineProgress> lines,
+        Func<ViewerLineProgress, decimal?> valueSelector)
+    {
+        var values = lines.Select(valueSelector).Where(value => value.HasValue).ToArray();
+        SetCellValue(sheet.Cell(row, column), values.Length == 0 ? null : values.Sum(value => value!.Value));
+    }
+
+    private static void ClearTemplateSampleRows(XLWorkbook workbook)
+    {
+        var qualitySheet = workbook.Worksheet(2);
+        qualitySheet.Range("B5:Q8").Clear(XLClearOptions.Contents);
+        qualitySheet.Range("I11:O13").Clear(XLClearOptions.Contents);
+        qualitySheet.Range("B19:Q24").Clear(XLClearOptions.Contents);
+        qualitySheet.Cell("P27").Clear(XLClearOptions.Contents);
+
+        var reviewSheet = workbook.Worksheet(3);
+        reviewSheet.Range("B7:P27").Clear(XLClearOptions.Contents);
+        reviewSheet.Range("B31:P40").Clear(XLClearOptions.Contents);
     }
 }

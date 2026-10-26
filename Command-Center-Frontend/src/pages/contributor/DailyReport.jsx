@@ -25,6 +25,7 @@ const EMPTY_FORM = {
   otTarget: "",
   plannedOTManhours: null, unplannedOTManhours: null, actualOTManhours: "",
   openWOQty: "", over7DaysWOBalanceQty: "",
+  wipLyingGreater3Days: "", wipLyingGreater7Days: "",
   dailyTRCInQty: "", dailyTRCOutQty: "",
   trcOverallFailureInflowPercent: "", trcLyingOver3DaysCr: "",
   issueDescription: "",
@@ -66,6 +67,8 @@ const GROUPS = [
       ] },
       { label: "Open WO (Qty)", fields: [{ key: "openWOQty", label: "Value" }] },
       { label: ">7 Days WO (Qty)", fields: [{ key: "over7DaysWOBalanceQty", label: "Value" }] },
+      { label: "WIP Lying >3 Days (Cr)", fields: [{ key: "wipLyingGreater3Days", label: "Value" }] },
+      { label: "WIP Lying >7 Days (Cr)", fields: [{ key: "wipLyingGreater7Days", label: "Value" }] },
     ],
   },
   {
@@ -85,6 +88,62 @@ const KPI_PLAN_FIELDS = [
   "fpyTarget", "ftyTarget", "rtyTarget", "osdTarget", "otTarget",
 ];
 
+const UPLOAD_TYPES = [
+  { value: "ie", label: "IE", group: "Production" },
+  { value: "production", label: "Production", group: "Production" },
+  { value: "quality", label: "Quality", group: "Quality" },
+  { value: "trc", label: "TRC", group: "TRC" },
+  { value: "woClosure", label: "WO Closure", group: "Operations" },
+  { value: "all", label: "Complete Excel", group: null },
+];
+
+const UPLOAD_FIELD_KEYS = {
+  ie: ["cphTarget", "cphActual"],
+  production: ["monthPlan", "monthActual", "productionPlan", "productionActual", "uphTarget", "uphActual", "upphTarget", "upphInstalled", "upphActual", "cphTarget", "cphActual", "osdReportingDateValue", "osdReportingDatePercent", "osdMtdValue", "osdMtdPercent", "issueDescription"],
+  quality: ["fpyTarget", "fpyActual", "ftyTarget", "ftyActual", "rtyTarget", "rtyActual"],
+  trc: ["dailyTRCInQty", "dailyTRCOutQty", "trcOverallFailureInflowPercent", "trcLyingOver3DaysCr"],
+  woClosure: [],
+};
+
+const UPLOAD_LOCK_FIELD_KEYS = {
+  ...UPLOAD_FIELD_KEYS,
+  woClosure: [
+    "openWOQty", "over7DaysWOBalanceQty",
+    "wipLyingGreater3Days", "wipLyingGreater7Days",
+  ],
+};
+
+function uploadTypeInfo(value) {
+  return UPLOAD_TYPES.find((item) => item.value === value) || UPLOAD_TYPES[0];
+}
+
+function fieldsForUploadType(value) {
+  return value === "all" ? null : new Set(UPLOAD_FIELD_KEYS[value] || []);
+}
+
+function filterImportedForm(form, value) {
+  const allowed = fieldsForUploadType(value);
+  return Object.fromEntries(Object.entries(form || {}).filter(([field]) => (
+    field !== "presentFields" && (!allowed || allowed.has(field))
+  )));
+}
+
+function groupUploadType(title) {
+  if (title === "Production") return "production";
+  if (title === "Quality") return "quality";
+  if (title === "Issue") return "production";
+  if (title === "TRC") return "trc";
+  if (title === "Operations") return "woClosure";
+  return title.toLowerCase();
+}
+
+function isFieldLocked(fieldKey, lockedTypes) {
+  return lockedTypes.includes("all")
+    || Object.entries(UPLOAD_LOCK_FIELD_KEYS).some(([type, fields]) => (
+      lockedTypes.includes(type) && fields.includes(fieldKey)
+    ));
+}
+
 const FATP_IMPORT_PREVIEW_FIELDS = [
   ["Month Plan", "monthPlan"], ["Month Actual", "monthActual"],
   ["Production Plan", "productionPlan"], ["Production Actual", "productionActual"],
@@ -94,12 +153,36 @@ const FATP_IMPORT_PREVIEW_FIELDS = [
   ["OS&D Reporting Date %", "osdReportingDatePercent"],
   ["OS&D MTD", "osdMtdValue"], ["OS&D MTD %", "osdMtdPercent"],
   ["Open WO Qty", "openWOQty"], [">7 Days WO Qty", "over7DaysWOBalanceQty"],
+  ["WIP Lying >3 Days", "wipLyingGreater3Days"], ["WIP Lying >7 Days", "wipLyingGreater7Days"],
   ["Issue", "issueDescription"],
+];
+
+const IMPORT_PREVIEW_FIELDS = [
+  ...FATP_IMPORT_PREVIEW_FIELDS,
+  ["UPPH Target", "upphTarget"],
+  ["CPH Target", "cphTarget"], ["CPH Actual", "cphActual"],
+  ["FPY Target", "fpyTarget"], ["FPY Actual", "fpyActual"],
+  ["FTY Target", "ftyTarget"], ["FTY Actual", "ftyActual"],
+  ["RTY Target", "rtyTarget"], ["RTY Actual", "rtyActual"],
+  ["OS&D Target", "osdTarget"], ["OT Target", "otTarget"],
+  ["Planned OT", "plannedOTManhours"], ["Unplanned OT", "unplannedOTManhours"],
+  ["Actual OT", "actualOTManhours"], ["Daily TRC In", "dailyTRCInQty"],
+  ["Daily TRC Out", "dailyTRCOutQty"], ["TRC Failure Inflow %", "trcOverallFailureInflowPercent"],
+  ["TRC Lying >3 Days", "trcLyingOver3DaysCr"],
 ];
 
 function today() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function normalizeCustomerName(value) {
+  return String(value || "").replace(/[^a-z0-9]/gi, "").toUpperCase();
+}
+
+function isUnspecifiedCustomer(value) {
+  const normalized = normalizeCustomerName(value);
+  return !normalized || normalized === "NA";
 }
 
 function asNumber(value) {
@@ -138,6 +221,8 @@ export default function DailyReport({ session, onSignOut }) {
   const [importPreview, setImportPreview] = useState(null);
   const [importDateConfirmed, setImportDateConfirmed] = useState(false);
   const [pendingProductionImport, setPendingProductionImport] = useState(null);
+  const [uploadType, setUploadType] = useState("production");
+  const [lockedUploadTypes, setLockedUploadTypes] = useState([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const excelFileInput = useRef(null);
@@ -154,23 +239,73 @@ export default function DailyReport({ session, onSignOut }) {
   const reportCategories = customer?.categories || [];
   const fatpCategory = reportCategories.find((item) => item.categoryName?.trim().toUpperCase() === "FATP");
   const smtCategory = reportCategories.find((item) => item.categoryName?.trim().toUpperCase() === "SMT");
-  const reportGroups = useMemo(() => GROUPS.map((group) => (
-    group.title === "Production"
-      ? {
+  const reportGroups = useMemo(() => GROUPS
+    .filter((group) => uploadType === "all"
+      || (uploadType === "ie" && group.title === "Production")
+      || (uploadType === "production" && ["Production", "Operations"].includes(group.title))
+      || groupUploadType(group.title) === uploadType)
+    .map((group) => {
+      if (group.title === "Operations" && uploadType === "production") {
+        const operationalOnlyFields = new Set([
+          "openWOQty",
+          "over7DaysWOBalanceQty",
+          "wipLyingGreater3Days",
+          "wipLyingGreater7Days",
+        ]);
+        return {
+          ...group,
+          rows: group.rows.filter((row) => !row.fields.some(({ key }) => operationalOnlyFields.has(key))),
+        };
+      }
+
+      if (group.title === "Operations" && uploadType === "woClosure") {
+        const nonWoFields = new Set([
+          "osdReportingDateValue",
+          "osdReportingDatePercent",
+          "osdMtdValue",
+          "osdMtdPercent",
+          "plannedOTManhours",
+          "unplannedOTManhours",
+        ]);
+        return {
+          ...group,
+          rows: group.rows.filter((row) => !row.fields.some(({ key }) => nonWoFields.has(key))),
+        };
+      }
+
+      return group.title === "Production"
+        ? {
           ...group,
           rows: group.rows
             .map((row) => ({
               ...row,
-              fields: row.fields.filter(({ key }) => (
-                isSmtCategory
+              fields: row.fields.filter(({ key }) => {
+                if (uploadType === "ie")
+                  return key === "cphTarget" || key === "cphActual";
+                return isSmtCategory
                   ? key !== "upphTarget" && key !== "upphInstalled" && key !== "upphActual"
-                  : key !== "cphTarget" && key !== "cphActual"
-              )),
+                  : key !== "cphTarget" && key !== "cphActual";
+              }),
             }))
             .filter((row) => row.fields.length > 0),
         }
-      : group
-  )), [isSmtCategory]);
+        : group;
+    }), [isSmtCategory, uploadType]);
+  const selectedUploadType = uploadTypeInfo(uploadType);
+  const selectedSectionLocked = lockedUploadTypes.includes("all")
+    || lockedUploadTypes.includes(uploadType)
+    || (uploadType === "all" && lockedUploadTypes.length > 0);
+  const uploadLocked = selectedSectionLocked
+    || (fieldsForUploadType(uploadType) === null
+      ? lockedUploadTypes.length > 0
+      : lockedUploadTypes.some((type) => (
+        (UPLOAD_LOCK_FIELD_KEYS[type] || []).some((field) => (
+          (UPLOAD_LOCK_FIELD_KEYS[uploadType] || []).includes(field)
+        ))
+      )));
+  const unlockUploadType = uploadType === "all" || lockedUploadTypes.includes("all")
+    ? "all"
+    : uploadType;
 
   const fetchKpiPlan = async (lineId, modelId, date = reportDate) => {
     const query = new URLSearchParams({
@@ -195,6 +330,7 @@ export default function DailyReport({ session, onSignOut }) {
 
       const statusRows = await api.get(`/daily-reports/line-status?customerId=${customerId}&categoryId=${categoryId}&reportDate=${reportDate}`);
       const reviewerAnnotations = await api.get(`/daily-reports/annotations?customerId=${customerId}&categoryId=${categoryId}&reportDate=${reportDate}`);
+      const uploadLocks = await api.get(`/daily-reports/upload-locks?customerId=${customerId}&categoryId=${categoryId}&reportDate=${reportDate}`);
       const catalogLines = Array.isArray(foundCategory.productionLines) ? foundCategory.productionLines : [];
       const mergedLines = catalogLines.map((line) => ({
         ...line,
@@ -257,6 +393,7 @@ export default function DailyReport({ session, onSignOut }) {
       setCategory(foundCategory);
       setLines(mergedLines);
       setLineData(Object.fromEntries(result));
+      setLockedUploadTypes(Array.isArray(uploadLocks) ? uploadLocks : []);
       setLoadedReportKey(`${customerId}:${categoryId}:${reportDate}`);
     } catch (e) {
       if (sequence === loadSequence.current)
@@ -410,24 +547,81 @@ export default function DailyReport({ session, onSignOut }) {
     }));
   };
 
-  const toggleLine = async (lineId) => {
-    const line = lineData[lineId];
-    if (!line) return;
-    const next = !line.isActive;
-    if (!next && !window.confirm("Mark this line inactive for this date? Its daily values will be cleared.")) return;
-    setBusy(`toggle-${lineId}`); setError(""); setNotice("");
+  const deleteDraft = async (lineId, entry) => {
+    if (!entry?.dailyReportId || !["DRAFT", "REJECTED"].includes(entry.status)) return;
+    if (!window.confirm(`Delete the saved draft for ${entry.modelName}? This cannot be undone from the report screen.`)) return;
+    setBusy(`delete-${entry.entryId}`);
+    setError("");
+    setNotice("");
     try {
-      await api.post("/daily-reports/line-status", {
-        reportDate, customerId: Number(customerId), categoryId: Number(categoryId), lineId: Number(lineId), isActive: next,
-      });
-      await loadReport(false);
-      setNotice(`${getLineName(lineId)} is now ${next ? "active" : "inactive"}.`);
+      await api.delete(`/daily-reports/draft/${entry.dailyReportId}`);
+      setLineData((current) => ({
+        ...current,
+        [lineId]: {
+          ...current[lineId],
+          entries: current[lineId].entries.filter((item) => item.entryId !== entry.entryId),
+          status: "IN_PROGRESS",
+        },
+      }));
+      setNotice(`${entry.modelName} draft deleted.`);
     } catch (e) {
-      setError(e.message || "Unable to update line status.");
-    } finally { setBusy(""); }
+      setError(e.message || "Unable to delete the draft.");
+    } finally {
+      setBusy("");
+    }
   };
 
   const getLineName = (lineId) => lines.find((x) => Number(x.lineId) === Number(lineId))?.lineName || "Selected line";
+
+  const toggleLineStatus = async (line) => {
+    const lineId = Number(line.lineId);
+    const data = lineData[lineId];
+    if (!data) return;
+
+    const isActive = data.isActive !== false;
+    const nextActive = !isActive;
+    const entries = data.entries || [];
+    if (nextActive === false) {
+      if (entries.some((entry) => ["SUBMITTED", "APPROVED"].includes(entry.status))) {
+        setError("A line with submitted or approved reports cannot be deactivated.");
+        return;
+      }
+      const hasUnsavedChanges = entries.some((entry) => (
+        entry.isNew || Object.keys(entry.form || {}).some((field) => (
+          String(entry.form[field] ?? "") !== String(entry.initialForm?.[field] ?? "")
+        ))
+      ));
+      if (hasUnsavedChanges) {
+        setError("Save or remove unsaved line entries before deactivating this line.");
+        return;
+      }
+    }
+
+    const action = nextActive ? "activate" : "deactivate";
+    const message = nextActive
+      ? `Activate ${line.lineName} for ${reportDate}?`
+      : `Deactivate ${line.lineName} for ${reportDate}? Saved draft data will be retained and restored when activated again.`;
+    if (!window.confirm(message)) return;
+
+    setBusy(`line-status-${lineId}`);
+    setError("");
+    setNotice("");
+    try {
+      await api.post("/daily-reports/line-status", {
+        customerId: Number(customerId),
+        categoryId: Number(categoryId),
+        lineId,
+        reportDate,
+        isActive: nextActive,
+      });
+      await loadReport(false);
+      setNotice(`${line.lineName} ${action}d for ${reportDate}.`);
+    } catch (e) {
+      setError(e.message || `Unable to ${action} this line.`);
+    } finally {
+      setBusy("");
+    }
+  };
 
   const switchReportCategory = (nextCategory) => {
     if (!nextCategory || Number(nextCategory.categoryId) === Number(categoryId)) return;
@@ -462,6 +656,55 @@ export default function DailyReport({ session, onSignOut }) {
       navigate(`/contributor/brands/${customerId}/categories/${nextCategory.categoryId}/report`);
   };
 
+  const lockSelectedUploadType = async () => {
+    if (selectedSectionLocked) return;
+    if (!window.confirm(`Lock ${selectedUploadType.label} for this report date? You will not be able to upload or edit this section afterwards.`)) return;
+    setBusy(`lock-${uploadType}`);
+    setError("");
+    setNotice("");
+    try {
+      await api.post("/daily-reports/upload-lock", {
+        customerId: Number(customerId),
+        categoryId: Number(categoryId),
+        reportDate,
+        uploadType,
+      });
+      setLockedUploadTypes((current) => current.includes(uploadType) ? current : [...current, uploadType]);
+      setNotice(`${selectedUploadType.label} is locked. Select another upload type to continue.`);
+    } catch (e) {
+      setError(e.message || `Unable to lock ${selectedUploadType.label}.`);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const unlockSelectedUploadType = async () => {
+    if (!selectedSectionLocked) return;
+    const unlockAll = unlockUploadType === "all";
+    const label = unlockAll ? "all locked sections" : selectedUploadType.label;
+    if (!window.confirm(`Unlock ${label} for this report date? Its fields will become editable again.`)) return;
+    setBusy(`unlock-${unlockUploadType}`);
+    setError("");
+    setNotice("");
+    try {
+      const query = new URLSearchParams({
+        customerId: String(customerId),
+        categoryId: String(categoryId),
+        reportDate,
+        uploadType: unlockUploadType,
+      });
+      await api.delete(`/daily-reports/upload-lock?${query.toString()}`);
+      setLockedUploadTypes((current) => unlockAll
+        ? []
+        : current.filter((type) => type !== unlockUploadType));
+      setNotice(`${unlockAll ? "All sections" : selectedUploadType.label} unlocked. Its fields are editable again.`);
+    } catch (e) {
+      setError(e.message || `Unable to unlock ${label}.`);
+    } finally {
+      setBusy("");
+    }
+  };
+
   const buildPayload = (lineId, entry, submissionBatchId = null) => ({
     reportDate,
     submissionBatchId,
@@ -492,6 +735,7 @@ export default function DailyReport({ session, onSignOut }) {
     plannedOTManhours: asNumber(entry.form.plannedOTManhours), unplannedOTManhours: asNumber(entry.form.unplannedOTManhours),
     actualOTManhours: asNumber(entry.form.actualOTManhours), openWOQty: asInteger(entry.form.openWOQty),
     over7DaysWOBalanceQty: asInteger(entry.form.over7DaysWOBalanceQty), dailyTRCInQty: asInteger(entry.form.dailyTRCInQty),
+    wipLyingGreater3Days: asInteger(entry.form.wipLyingGreater3Days), wipLyingGreater7Days: asInteger(entry.form.wipLyingGreater7Days),
     dailyTRCOutQty: asInteger(entry.form.dailyTRCOutQty), trcOverallFailureInflowPercent: asNumber(entry.form.trcOverallFailureInflowPercent),
     trcLyingOver3DaysCr: asNumber(entry.form.trcLyingOver3DaysCr), issueDescription: entry.form.issueDescription?.trim() || null,
   });
@@ -541,20 +785,6 @@ export default function DailyReport({ session, onSignOut }) {
           return { ...current, [lineId]: { ...currentLine, status: lineStatus, entries } };
         });
 
-        const sequence = loadSequence.current;
-        fetchKpiPlan(lineId, entry.modelId).then(({ plan }) => {
-          if (sequence === loadSequence.current)
-            setEntryPlan(lineId, entry.entryId, plan || null, plan ? "ready" : "missing");
-        }).catch((e) => {
-          if (sequence === loadSequence.current)
-            setEntryPlan(
-              lineId,
-              entry.entryId,
-              null,
-              /more than one|ambiguous/i.test(e.message || "") ? "ambiguous" : "error",
-              e.message || "Unable to load this monthly KPI plan."
-            );
-        });
       }
       setNotice(`${getLineName(lineId)} ${submit ? "submitted for approval" : "draft saved"}.`);
     } catch (e) {
@@ -562,7 +792,7 @@ export default function DailyReport({ session, onSignOut }) {
     } finally { setBusy(""); }
   };
 
-  function stageSmtPreview(preview, sequence = loadSequence.current) {
+  function stageSmtPreview(preview) {
     const pageLines = new Map(lines.map((line) => [Number(line.lineId), line]));
     const validationErrors = [];
 
@@ -627,9 +857,10 @@ export default function DailyReport({ session, onSignOut }) {
           if (existingIndex >= 0) {
             const existing = entries[existingIndex];
             const presentFields = new Set(imported.form?.presentFields || Object.keys(imported.form || {}));
-            const formValues = Object.fromEntries(Object.entries(imported.form || {}).filter(([field]) => (
-              field !== "presentFields" && presentFields.has(field)
-            )));
+            const formValues = filterImportedForm(
+              Object.fromEntries(Object.entries(imported.form || {}).filter(([field]) => presentFields.has(field))),
+              uploadType
+            );
             const editedFields = new Set(existing.planEditedFields || []);
             for (const field of KPI_PLAN_FIELDS) {
               if (formValues[field] === null || formValues[field] === undefined || formValues[field] === "")
@@ -647,9 +878,10 @@ export default function DailyReport({ session, onSignOut }) {
             }
           } else {
             const presentFields = new Set(imported.form?.presentFields || Object.keys(imported.form || {}));
-            const importedForm = Object.fromEntries(Object.entries(imported.form || {}).filter(([field]) => (
-              field !== "presentFields" && presentFields.has(field)
-            )));
+            const importedForm = filterImportedForm(
+              Object.fromEntries(Object.entries(imported.form || {}).filter(([field]) => presentFields.has(field))),
+              uploadType
+            );
             const form = { ...EMPTY_FORM, ...importedForm };
             entries.push({
               entryId: importedEntryIds.get(`${lineId}:${imported.modelId}`),
@@ -663,11 +895,9 @@ export default function DailyReport({ session, onSignOut }) {
               initialForm: { ...EMPTY_FORM },
               isNew: true,
               plan: null,
-              planStatus: "loading",
+              planStatus: "not-applicable",
               planError: "",
-              planEditedFields: KPI_PLAN_FIELDS.filter((field) => (
-                form[field] !== null && form[field] !== undefined && form[field] !== ""
-              )),
+              planEditedFields: [],
             });
           }
         }
@@ -677,23 +907,6 @@ export default function DailyReport({ session, onSignOut }) {
 
       return next;
     });
-
-    for (const imported of importedNewModels) {
-      const entryId = importedEntryIds.get(`${imported.lineId}:${imported.modelId}`);
-      fetchKpiPlan(imported.lineId, imported.modelId).then(({ plan }) => {
-        if (sequence === loadSequence.current)
-          setEntryPlan(imported.lineId, entryId, plan || null, plan ? "ready" : "missing");
-      }).catch((e) => {
-        if (sequence === loadSequence.current)
-          setEntryPlan(
-            imported.lineId,
-            entryId,
-            null,
-            /more than one|ambiguous/i.test(e.message || "") ? "ambiguous" : "error",
-            e.message || "Unable to load this monthly KPI plan."
-          );
-      });
-    }
 
     const importWarnings = (preview.errors || []).slice(0, 3);
     const remainingWarnings = Math.max(0, (preview.errors || []).length - importWarnings.length);
@@ -785,6 +998,7 @@ export default function DailyReport({ session, onSignOut }) {
         formData.append("customerId", String(customerId));
         formData.append("categoryId", String(targetCategory.categoryId));
         formData.append("reportDate", reportDate);
+        formData.append("uploadType", uploadType);
         const result = await api.postFormData("/daily-reports/import/preview", formData);
         return [Number(targetCategory.categoryId), result];
       }));
@@ -850,7 +1064,7 @@ export default function DailyReport({ session, onSignOut }) {
         return;
       }
 
-      stageSmtPreview(preview, sequence);
+      stageSmtPreview(preview);
     } catch (e) {
       const otherCategory = reportCategories.find(
         (item) => Number(item.categoryId) !== Number(categoryId)
@@ -905,7 +1119,8 @@ export default function DailyReport({ session, onSignOut }) {
       const modelId = Number(row.selectedModelId);
       const line = lineData[lineId];
       const model = line?.models?.find((item) => Number(item.modelId) === modelId);
-      if (!row.customer || normalizedCustomer(row.customer) !== normalizedCustomer(customer?.customerName)) {
+      if (!isUnspecifiedCustomer(row.customer)
+        && normalizedCustomer(row.customer) !== normalizedCustomer(customer?.customerName)) {
         errors.push(`Excel row ${row.rowNumber} does not identify the selected brand.`);
       }
       if (!line || line.isActive === false || !model) {
@@ -937,9 +1152,10 @@ export default function DailyReport({ session, onSignOut }) {
       lineId,
       modelId,
       modelName: model.modelName,
-      form: Object.fromEntries(Object.entries(row.form || {}).filter(([field, value]) => (
-        field !== "presentFields" && value !== null && value !== undefined && value !== ""
-      ))),
+      form: filterImportedForm(
+        Object.fromEntries(Object.entries(row.form || {}).filter(([, value]) => value !== null && value !== undefined && value !== "")),
+        uploadType
+      ),
     }));
     const newModels = importedRows.filter((imported) => (
       !lineData[imported.lineId]?.entries.some((entry) => Number(entry.modelId) === imported.modelId)
@@ -994,11 +1210,9 @@ export default function DailyReport({ session, onSignOut }) {
               initialForm: { ...EMPTY_FORM },
               isNew: true,
               plan: null,
-              planStatus: "loading",
+              planStatus: "not-applicable",
               planError: "",
-              planEditedFields: KPI_PLAN_FIELDS.filter((field) => (
-                form[field] !== null && form[field] !== undefined && form[field] !== ""
-              )),
+              planEditedFields: [],
             });
           }
         }
@@ -1006,24 +1220,6 @@ export default function DailyReport({ session, onSignOut }) {
       }
       return next;
     });
-
-    const requestSequence = loadSequence.current;
-    for (const imported of newModels) {
-      const entryId = newEntryIds.get(`${imported.lineId}:${imported.modelId}`);
-      fetchKpiPlan(imported.lineId, imported.modelId).then(({ plan }) => {
-        if (requestSequence === loadSequence.current)
-          setEntryPlan(imported.lineId, entryId, plan || null, plan ? "ready" : "missing");
-      }).catch((e) => {
-        if (requestSequence === loadSequence.current)
-          setEntryPlan(
-            imported.lineId,
-            entryId,
-            null,
-            /more than one|ambiguous/i.test(e.message || "") ? "ambiguous" : "error",
-            e.message || "Unable to load this monthly KPI plan."
-          );
-      });
-    }
 
     setImportPreview(null);
     setImportDateConfirmed(false);
@@ -1044,7 +1240,8 @@ export default function DailyReport({ session, onSignOut }) {
     setImportDateConfirmed(false);
   };
 
-  const completed = lines.filter((line) => ["SUBMITTED", "APPROVED", "INACTIVE"].includes(lineData[line.lineId]?.status)).length;
+  const completed = lines.filter((line) => lineData[line.lineId]?.isActive === false
+    || ["SUBMITTED", "APPROVED"].includes(lineData[line.lineId]?.status)).length;
 
   return (
     <ContributorLayout user={session?.user} onSignOut={onSignOut}>
@@ -1081,19 +1278,30 @@ export default function DailyReport({ session, onSignOut }) {
             )}
             <label className="report-upload-type">
               <span>UPLOAD TYPE</span>
-              <select aria-label="Select Excel upload type" defaultValue="production" disabled={isImporting || Boolean(busy)}>
+              <select aria-label="Select Excel upload type" value={uploadType} onChange={(event) => setUploadType(event.target.value)} disabled={isImporting || Boolean(busy)}>
                 <option value="production">Production · SMT + FATP</option>
+                {UPLOAD_TYPES.filter((item) => item.value !== "production").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             <button
               className="secondary-action report-excel-upload"
               type="button"
               style={{ marginLeft: "auto", flexShrink: 0 }}
-              disabled={loading || !reportLoaded || isImporting || Boolean(busy) || Boolean(pendingProductionImport) || Boolean(importPreview)}
+              disabled={loading || !reportLoaded || isImporting || Boolean(busy) || uploadLocked || Boolean(pendingProductionImport) || Boolean(importPreview)}
               onClick={() => excelFileInput.current?.click()}
             >
               {isImporting ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
               {isImporting ? "Reading Excel..." : "Upload Excel"}
+            </button>
+            <button
+              className="secondary-action report-lock-upload"
+              type="button"
+              disabled={loading || !reportLoaded || isImporting || Boolean(busy)}
+              onClick={selectedSectionLocked ? unlockSelectedUploadType : lockSelectedUploadType}
+            >
+              {selectedSectionLocked
+                ? `Unlock ${unlockUploadType === "all" ? "All Sections" : selectedUploadType.label}`
+                : `Lock ${selectedUploadType.label}`}
             </button>
             <input
               ref={excelFileInput}
@@ -1109,6 +1317,14 @@ export default function DailyReport({ session, onSignOut }) {
             <div><span>CATEGORY</span><strong>{category?.categoryName || "—"}</strong></div>
             <label><span>REPORT DATE</span><input type="date" max={today()} value={reportDate} onChange={(e) => { loadSequence.current += 1; setReportDate(e.target.value); }} /></label>
             <div><span>PROGRESS</span><strong>{completed}/{lines.length} lines completed</strong></div>
+          </div>
+
+          <div className="upload-section-status" aria-label="Upload section status">
+            {UPLOAD_TYPES.filter((item) => item.value !== "all").map((item) => (
+              <span key={item.value} className={lockedUploadTypes.includes(item.value) || lockedUploadTypes.includes("all") ? "locked" : "open"}>
+                {item.label}: {lockedUploadTypes.includes(item.value) || lockedUploadTypes.includes("all") ? "Locked" : "Open"}
+              </span>
+            ))}
           </div>
 
           {(error || notice) && (
@@ -1140,9 +1356,9 @@ export default function DailyReport({ session, onSignOut }) {
             <section className="excel-review" aria-label="FATP Excel import review">
               <div className="excel-review-head">
                 <div>
-                  <span>FATP EXCEL PREVIEW</span>
+                  <span>{selectedUploadType.label.toUpperCase()} EXCEL PREVIEW</span>
                   <h2>Review imported rows</h2>
-                  <p>Previewing {importPreview.rows.length} source row(s) from the FATP production table. Applying only stages values in this form; it does not save or submit.</p>
+                  <p>Previewing {importPreview.rows.length} source row(s) for {selectedUploadType.label}. Applying only stages values in this form; it does not save or submit.</p>
                 </div>
                 <button className="secondary-action" type="button" onClick={cancelImportPreview}>Cancel preview</button>
               </div>
@@ -1170,7 +1386,7 @@ export default function DailyReport({ session, onSignOut }) {
               {importPreview.reportDate === reportDate && loading && (
                 <div className="excel-date-warning">Loading saved reports and plan data for {reportDate} before these rows can be applied…</div>
               )}
-              <p className="excel-field-note">WIP Lying &gt;3 Days and WIP Lying &gt;7 Days have no equivalent Daily Report fields and are not imported. The workbook also has no FPY/FTY/RTY, overtime, or TRC columns; existing form values for absent columns are left unchanged.</p>
+              <p className="excel-field-note">Production workbook values are staged only for columns present in that workbook; other report sections remain unchanged.</p>
               <div className="excel-review-scroll">
                 <table className="excel-review-table">
                   <thead><tr><th>Use</th><th>Source row</th><th>Original Excel values</th><th>Map to active line</th><th>Map to brand model</th><th>Values to stage</th><th>Review status</th></tr></thead>
@@ -1179,9 +1395,8 @@ export default function DailyReport({ session, onSignOut }) {
                       const selectedLineId = Number(row.selectedLineId);
                       const selectedLine = lineData[selectedLineId];
                       const modelOptions = selectedLine?.models || [];
-                      const customerMatches = row.customer
-                        && row.customer.replace(/[^a-z0-9]/gi, "").toUpperCase()
-                          === (customer?.customerName || "").replace(/[^a-z0-9]/gi, "").toUpperCase();
+                      const customerMatches = isUnspecifiedCustomer(row.customer)
+                        || normalizeCustomerName(row.customer) === normalizeCustomerName(customer?.customerName);
                       const canReview = Boolean(row.form) && Boolean(customerMatches);
                       const mappingReady = Boolean(selectedLine)
                         && selectedLine.isActive !== false
@@ -1236,7 +1451,10 @@ export default function DailyReport({ session, onSignOut }) {
                             </select>
                           </td>
                           <td><div className="excel-staged-values">
-                            {FATP_IMPORT_PREVIEW_FIELDS.filter(([, key]) => row.form?.[key] !== null && row.form?.[key] !== undefined && row.form?.[key] !== "")
+                            {IMPORT_PREVIEW_FIELDS.filter(([, key]) => {
+                              const allowed = fieldsForUploadType(uploadType);
+                              return (!allowed || allowed.has(key)) && row.form?.[key] !== null && row.form?.[key] !== undefined && row.form?.[key] !== "";
+                            })
                               .map(([label, key]) => <span key={key}><b>{label}:</b> {String(row.form[key])}</span>)}
                             {row.status === "invalid" && <span className="excel-invalid-note">Invalid cells are omitted; all other displayed values are staged.</span>}
                           </div></td>
@@ -1264,10 +1482,13 @@ export default function DailyReport({ session, onSignOut }) {
                   lines={lines}
                   lineData={lineData}
                   onChange={updateEntry}
-                  onToggleLine={toggleLine}
                   onAddModel={addModel}
                   onRemoveModel={removeModel}
+                  onDeleteDraft={deleteDraft}
+                  onToggleLine={toggleLineStatus}
                   busy={busy}
+                  loading={loading}
+                  lockedUploadTypes={lockedUploadTypes}
                 />
               </div>
 
@@ -1304,7 +1525,7 @@ function AddModelSelect({ models, onSelect, disabled }) {
   return <label className="add-model-control"><Plus size={13} /><select value="" onChange={(e) => onSelect(e.target.value)} disabled={disabled}><option value="">Add model</option>{models.map((model) => <option key={model.modelId} value={model.modelId}>{model.modelName}</option>)}</select></label>;
 }
 
-function MatrixTable({ groups, lines, lineData, onChange, onToggleLine, onAddModel, onRemoveModel, busy }) {
+function MatrixTable({ groups, lines, lineData, onChange, onAddModel, onRemoveModel, onDeleteDraft, onToggleLine, busy, loading, lockedUploadTypes }) {
   const columns = lines.flatMap((line) => {
     const entries = lineData[line.lineId]?.entries || [];
     return entries.length
@@ -1328,11 +1549,21 @@ function MatrixTable({ groups, lines, lineData, onChange, onToggleLine, onAddMod
         {lines.map((line) => {
             const data = lineData[line.lineId] || { entries: [], isActive: true };
             const entryCount = Math.max(data.entries.length, 1);
-            return <th key={line.lineId} className="line-group-head" colSpan={entryCount}>
+            const hasSubmittedEntries = data.entries.some((entry) => ["SUBMITTED", "APPROVED"].includes(entry.status));
+            return <th key={line.lineId} className={`line-group-head ${data.isActive === false ? "is-line-inactive" : ""}`} colSpan={entryCount}>
               <div className="line-head-inner">
                 <div><strong>{line.lineName}</strong><span>{line.sapLocation || "SAP location not set"}</span></div>
-                <button className={`matrix-line-toggle ${data.isActive === false ? "off" : ""}`} onClick={() => onToggleLine(line.lineId)} disabled={busy === `toggle-${line.lineId}`}>
-                  {data.isActive === false ? <ToggleLeft size={18} /> : <ToggleRight size={18} />}
+                <button
+                  type="button"
+                  className="matrix-line-toggle"
+                  aria-label={`${data.isActive === false ? "Activate" : "Deactivate"} ${line.lineName}`}
+                  title={hasSubmittedEntries ? "Submitted or approved reports prevent line deactivation." : `${data.isActive === false ? "Activate" : "Deactivate"} this line for the selected report date`}
+                  disabled={busy === `line-status-${line.lineId}` || loading || (data.isActive !== false && hasSubmittedEntries)}
+                  onClick={() => onToggleLine(line)}
+                >
+                  {busy === `line-status-${line.lineId}`
+                    ? <Loader2 size={15} className="spin" />
+                    : data.isActive === false ? <ToggleLeft size={18} /> : <ToggleRight size={18} />}
                 </button>
               </div>
             </th>;
@@ -1354,7 +1585,9 @@ function MatrixTable({ groups, lines, lineData, onChange, onToggleLine, onAddMod
                   {entry.planStatus === "missing" && <small className="plan-status missing" title="No monthly plan exists for this plant, customer, category, line, model and month.">{entry.isNew ? "No monthly plan; targets left blank." : "No active monthly plan; saved targets are preserved."}</small>}
                   {entry.planStatus === "error" && <small className="plan-status error" title={entry.planError}>KPI plan unavailable; daily report remains editable.</small>}
                   {entry.planStatus === "ambiguous" && <small className="plan-status ambiguous" title={entry.planError}>Multiple monthly plans match; targets not prefilled.</small>}
-                  {entry.isNew && <button onClick={() => onRemoveModel(line.lineId, entry.entryId)} title="Remove model"><Trash2 size={13} /></button>}
+                  {entry.isNew
+                    ? <button onClick={() => onRemoveModel(line.lineId, entry.entryId)} title="Remove model"><Trash2 size={13} /></button>
+                    : ["DRAFT", "REJECTED"].includes(entry.status) && <button onClick={() => onDeleteDraft(line.lineId, entry)} disabled={busy === `delete-${entry.entryId}`} title="Delete saved draft" aria-label={`Delete saved draft for ${entry.modelName}`}><Trash2 size={13} /></button>}
                 </div>
               </th>
             ));
@@ -1363,13 +1596,13 @@ function MatrixTable({ groups, lines, lineData, onChange, onToggleLine, onAddMod
     </thead>
     <tbody>
       {groups.map((group) => (
-        <MatrixGroup key={group.title} group={group} columns={columns} lineData={lineData} onChange={onChange} />
+        <MatrixGroup key={group.title} group={group} columns={columns} lineData={lineData} onChange={onChange} lockedUploadTypes={lockedUploadTypes} />
       ))}
     </tbody>
   </table>;
 }
 
-function MatrixGroup({ group, columns, lineData, onChange }) {
+function MatrixGroup({ group, columns, lineData, onChange, lockedUploadTypes }) {
   return <>
     <tr className="group-row">
       <th className="sticky-col group-label">{group.title}</th>
@@ -1379,19 +1612,22 @@ function MatrixGroup({ group, columns, lineData, onChange }) {
       <th className="sticky-col parameter-label"><span>{row.label}</span></th>
       {columns.map(({ lineId, entry }) => {
         if (!entry) return <td className="matrix-cell empty-matrix-cell" key={`${lineId}-${row.label}`} />;
-        const disabled = entry.status === "APPROVED" || lineData[lineId]?.isActive === false;
         return <td className="matrix-cell" key={`${row.label}-${entry.entryId}`}>
           <div className="matrix-values-grid">
-            {row.fields.map(({ key, label }) => (
-              <label className={`matrix-value-field ${key === "issueDescription" ? "matrix-value-wide" : ""} ${entry.annotations?.some((item) => item.fieldKey === key && item.severity === "RED" && !item.resolvedAt) ? "review-field-red" : ""} ${entry.annotations?.some((item) => item.fieldKey === key && item.severity === "YELLOW" && !item.resolvedAt) ? "review-field-yellow" : ""}`} key={key}>
+            {row.fields.map(({ key, label }) => {
+              const disabled = isFieldLocked(key, lockedUploadTypes)
+                || entry.status === "APPROVED"
+                || entry.status === "SUBMITTED"
+                || lineData[lineId]?.isActive === false;
+              return <label className={`matrix-value-field ${key === "issueDescription" ? "matrix-value-wide" : ""} ${entry.annotations?.some((item) => item.fieldKey === key && item.severity === "RED" && !item.resolvedAt) ? "review-field-red" : ""} ${entry.annotations?.some((item) => item.fieldKey === key && item.severity === "YELLOW" && !item.resolvedAt) ? "review-field-yellow" : ""}`} key={key}>
                 <span>{label}</span>
                 {key === "issueDescription"
                   ? <textarea aria-label={`${row.label} ${label}`} value={entry.form?.[key] ?? ""} disabled={disabled} placeholder="Issue / observation" onChange={(event) => onChange(lineId, entry.entryId, key, event.target.value)} />
                   : <input aria-label={`${row.label} ${label}`} type="number" min="0" step="0.01" value={entry.form?.[key] ?? ""} disabled={disabled} placeholder="—" onChange={(event) => onChange(lineId, entry.entryId, key, event.target.value)} />}
                 {(entry.annotations || []).filter((annotation) => annotation.fieldKey === key && !annotation.resolvedAt).map((annotation) => <small className={`review-field-note ${annotation.severity.toLowerCase()}`} key={annotation.annotationId}><strong>{annotation.severity === "RED" ? "Required correction" : "Verify / clarify"}:</strong> {annotation.comment}</small>)}
                 {(entry.annotations || []).filter((annotation) => annotation.fieldKey === key && annotation.resolvedAt).length > 0 && <details className="review-field-history"><summary>Previous review ({entry.annotations.filter((annotation) => annotation.fieldKey === key && annotation.resolvedAt).length})</summary>{entry.annotations.filter((annotation) => annotation.fieldKey === key && annotation.resolvedAt).map((annotation) => <small key={annotation.annotationId}>{annotation.severity}: {annotation.comment} · submitted value: {annotation.correctedValue ?? "unchanged"}</small>)}</details>}
-              </label>
-            ))}
+              </label>;
+            })}
           </div>
         </td>;
       })}

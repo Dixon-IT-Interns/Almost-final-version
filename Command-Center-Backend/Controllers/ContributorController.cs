@@ -104,6 +104,8 @@ public sealed class ContributorController(SqlConnectionFactory connectionFactory
             LEFT JOIN Model m ON m.ModelId=dr.ModelId
             WHERE dr.CreatedBy=@UserId
               AND dr.PlantId=@PlantId
+              AND dr.IsActive=1
+              AND dr.ModelId IS NOT NULL
               AND dr.ReportDate>=DATEADD(day,-@Days,CAST(GETDATE() AS date))
               AND (@Status IS NULL OR dr.Status=@Status)
             ORDER BY dr.ReportDate DESC,COALESCE(dr.UpdatedAt,dr.CreatedAt) DESC;

@@ -16,14 +16,9 @@ The fixed controller now saves by:
 
 `ReportDate + CustomerId + CategoryId + LineId + ModelId`
 
-## Line inactive behavior
+## Daily line availability
 
-The line status endpoint uses the existing `DailyReport` rows. When a line is made inactive for a date:
-
-1. Existing daily report rows for that line/date are marked inactive.
-2. All daily actual KPI values are set to SQL `NULL`.
-3. If the line had no model row yet, a line-level inactive marker is created with `ModelId = NULL`.
-4. Reactivating removes only that marker and restores existing model rows as editable drafts.
+Contributors can deactivate an unused line for a report date and activate it again later. The line state is stored using a model-less inactive marker; it does not write `INACTIVE` as a report status or delete saved drafts. Deactivation is blocked when the line has submitted or approved reports, and saving/submitting is rejected while the line is deactivated. Reactivating restores its saved draft rows.
 
 ## Monthly KPI prerequisite
 

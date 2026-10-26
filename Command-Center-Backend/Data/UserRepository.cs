@@ -799,6 +799,32 @@ public sealed class UserRepository(SqlConnectionFactory connectionFactory)
             cancellationToken) > 0;
     }
 
+    public async Task<bool> DeleteAsync(
+        int userId,
+        int? plantScope,
+        bool superAdmin,
+        CancellationToken cancellationToken)
+    {
+        await using var connection =
+            await connectionFactory.OpenAsync(cancellationToken);
+
+        await using var command = new SqlCommand(
+            """
+            DELETE FROM [User]
+            WHERE UserId = @UserId
+              AND (@PlantScope IS NULL OR PlantId = @PlantScope)
+              AND RoleId <> (SELECT RoleId FROM Role WHERE RoleName = 'SuperAdmin')
+              AND (@SuperAdmin = 1 OR RoleId <> (SELECT RoleId FROM Role WHERE RoleName = 'Admin'))
+            """,
+            connection);
+
+        command.Parameters.AddWithValue("@UserId", userId);
+        command.Parameters.AddWithValue("@PlantScope", (object?)plantScope ?? DBNull.Value);
+        command.Parameters.AddWithValue("@SuperAdmin", superAdmin);
+
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     public async Task<int> CreateAsync(
         CreateUserRequest request,
         string passwordHash,

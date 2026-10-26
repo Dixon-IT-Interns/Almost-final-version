@@ -32,7 +32,7 @@ export default function CategorySelection({ session, onSignOut }) {
           try {
             const statuses = await api.get(`/daily-reports/line-status?customerId=${customerId}&categoryId=${category.categoryId}&reportDate=${today()}`);
             const lines = Array.isArray(statuses) ? statuses : [];
-            const done = lines.filter((line) => line.status === "SUBMITTED" || line.status === "APPROVED" || line.status === "INACTIVE").length;
+            const done = lines.filter((line) => line.isActive === false || line.status === "SUBMITTED" || line.status === "APPROVED").length;
             const completed = lines.length > 0 && done === lines.length;
             return [category.categoryId, { done, total: lines.length, completed }];
           } catch {

@@ -115,9 +115,8 @@ public sealed class DailyReportsController(
 
         var models = new List<object>();
 
-        // Models belong to a customer, not to a production line.
-        // Every active model for the selected customer is available on each
-        // active line inside the selected customer/category context.
+        // Models belong to the selected customer. Any active line in the
+        // selected category may run any active model for that customer.
         const string modelSql = """
             SELECT
                 m.ModelId,
@@ -280,6 +279,15 @@ public sealed class DailyReportsController(
         [FromForm] DailyReportExcelImportRequest request,
         CancellationToken cancellationToken)
     {
+        if (!DailyReportUploadLockRequest.ValidUploadTypes.Contains(request.UploadType))
+        {
+            return BadRequest(new
+            {
+                valid = false,
+                message = "Excel import failed: Select a valid upload type."
+            });
+        }
+
         if (request.File is null || request.File.Length == 0)
         {
             return BadRequest(new
@@ -294,10 +302,13 @@ public sealed class DailyReportsController(
                 ".xlsx",
                 StringComparison.OrdinalIgnoreCase))
         {
+            var extension = Path.GetExtension(request.File.FileName);
             return BadRequest(new
             {
                 valid = false,
-                message = "Excel import failed: Only .xlsx files are supported."
+                message = string.Equals(extension, ".xls", StringComparison.OrdinalIgnoreCase)
+                    ? "Excel import failed: This is a legacy .xls file. Open it in Excel and use Save As → Excel Workbook (*.xlsx), then upload the new .xlsx file."
+                    : "Excel import failed: Only Excel Workbook (*.xlsx) files are supported."
             });
         }
 
@@ -335,6 +346,7 @@ public sealed class DailyReportsController(
             request.CustomerId,
             request.CategoryId,
             request.ReportDate,
+            request.UploadType,
             cancellationToken);
 
         return preview.Valid
@@ -348,6 +360,120 @@ public sealed class DailyReportsController(
                 errors = preview.Errors,
                 message = $"Excel import failed: {string.Join(" ", preview.Errors)}"
             });
+    }
+
+    [HttpGet("upload-locks")]
+    public async Task<IActionResult> GetUploadLocks(
+        [FromQuery] int customerId,
+        [FromQuery] int categoryId,
+        [FromQuery] DateTime reportDate,
+        CancellationToken cancellationToken)
+    {
+        if (customerId <= 0 || categoryId <= 0 || reportDate == default)
+            return BadRequest(new { message = "Brand, category and report date are required." });
+        if (!await HasCustomerAccessAsync(customerId, cancellationToken))
+            return Forbid();
+
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(
+            """
+            SELECT UploadType
+            FROM DailyReportUploadLock
+            WHERE PlantId = @PlantId
+              AND ReportDate = @ReportDate
+              AND CustomerId = @CustomerId
+              AND CategoryId = @CategoryId;
+            """, connection);
+        Add(command, "@PlantId", SqlDbType.Int, GetPlantId());
+        Add(command, "@ReportDate", SqlDbType.Date, reportDate.Date);
+        Add(command, "@CustomerId", SqlDbType.Int, customerId);
+        Add(command, "@CategoryId", SqlDbType.Int, categoryId);
+
+        var locked = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            locked.Add(reader.GetString(0));
+
+        return Ok(locked);
+    }
+
+    [HttpPost("upload-lock")]
+    public async Task<IActionResult> LockUploadType(
+        [FromBody] DailyReportUploadLockRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!DailyReportUploadLockRequest.ValidUploadTypes.Contains(request.UploadType))
+            return BadRequest(new { message = "Select a valid upload type to lock." });
+        if (request.CustomerId <= 0 || request.CategoryId <= 0 || request.ReportDate == default)
+            return BadRequest(new { message = "Brand, category and report date are required." });
+        if (!await HasCustomerAccessAsync(request.CustomerId, cancellationToken))
+            return Forbid();
+
+        var userId = GetUserId();
+        if (userId <= 0)
+            return Unauthorized(new { message = "The current user could not be identified." });
+
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(
+            """
+            IF NOT EXISTS
+            (
+                SELECT 1 FROM DailyReportUploadLock
+                WHERE PlantId = @PlantId AND ReportDate = @ReportDate
+                  AND CustomerId = @CustomerId AND CategoryId = @CategoryId
+                  AND UploadType = @UploadType
+            )
+            BEGIN
+                INSERT INTO DailyReportUploadLock
+                    (PlantId, ReportDate, CustomerId, CategoryId, UploadType, LockedBy)
+                VALUES
+                    (@PlantId, @ReportDate, @CustomerId, @CategoryId, @UploadType, @UserId);
+            END;
+            """, connection);
+        Add(command, "@PlantId", SqlDbType.Int, GetPlantId());
+        Add(command, "@ReportDate", SqlDbType.Date, request.ReportDate.Date);
+        Add(command, "@CustomerId", SqlDbType.Int, request.CustomerId);
+        Add(command, "@CategoryId", SqlDbType.Int, request.CategoryId);
+        Add(command, "@UploadType", SqlDbType.VarChar, request.UploadType);
+        Add(command, "@UserId", SqlDbType.Int, userId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return Ok(new { locked = true, uploadType = request.UploadType });
+    }
+
+    [HttpDelete("upload-lock")]
+    public async Task<IActionResult> UnlockUploadType(
+        [FromQuery] int customerId,
+        [FromQuery] int categoryId,
+        [FromQuery] DateTime reportDate,
+        [FromQuery] string uploadType,
+        CancellationToken cancellationToken)
+    {
+        if (!DailyReportUploadLockRequest.ValidUploadTypes.Contains(uploadType))
+            return BadRequest(new { message = "Select a valid upload type to unlock." });
+        if (customerId <= 0 || categoryId <= 0 || reportDate == default)
+            return BadRequest(new { message = "Brand, category and report date are required." });
+        if (!await HasCustomerAccessAsync(customerId, cancellationToken))
+            return Forbid();
+
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(
+            """
+            DELETE FROM DailyReportUploadLock
+            WHERE PlantId = @PlantId
+              AND ReportDate = @ReportDate
+              AND CustomerId = @CustomerId
+              AND CategoryId = @CategoryId
+              AND (@UploadType = 'all' OR UploadType = @UploadType);
+            """, connection);
+        Add(command, "@PlantId", SqlDbType.Int, GetPlantId());
+        Add(command, "@ReportDate", SqlDbType.Date, reportDate.Date);
+        Add(command, "@CustomerId", SqlDbType.Int, customerId);
+        Add(command, "@CategoryId", SqlDbType.Int, categoryId);
+        Add(command, "@UploadType", SqlDbType.VarChar, uploadType);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return Ok(new { locked = false, uploadType });
     }
 
 
@@ -375,10 +501,6 @@ public sealed class DailyReportsController(
                 pl.SAPLocation,
 
                 CASE
-                    WHEN COALESCE(x.ActiveEntryCount, 0) = 0
-                         AND COALESCE(x.InactiveEntryCount, 0) > 0
-                        THEN 'INACTIVE'
-
                     WHEN COALESCE(x.ActiveEntryCount, 0) > 0
                          AND COALESCE(x.ApprovedEntryCount, 0)
                              = COALESCE(x.ActiveEntryCount, 0)
@@ -399,7 +521,8 @@ public sealed class DailyReportsController(
                 x.LatestSubmittedAt,
                 x.LatestDailyReportId,
 
-                COALESCE(x.ActiveEntryCount, 0) AS ActiveEntryCount
+                COALESCE(x.ActiveEntryCount, 0) AS ActiveEntryCount,
+                COALESCE(x.InactiveMarkerCount, 0) AS InactiveMarkerCount
 
             FROM ProductionLine pl
 
@@ -438,14 +561,6 @@ public sealed class DailyReportsController(
                         END
                     ) AS ApprovedEntryCount,
 
-                    SUM(
-                        CASE
-                            WHEN dr.IsActive = 0
-                            THEN 1
-                            ELSE 0
-                        END
-                    ) AS InactiveEntryCount,
-
                     MAX(
                         CASE
                             WHEN dr.Status IN ('SUBMITTED', 'APPROVED')
@@ -454,7 +569,15 @@ public sealed class DailyReportsController(
                         END
                     ) AS LatestSubmittedAt,
 
-                    MAX(dr.DailyReportId) AS LatestDailyReportId
+                    MAX(CASE WHEN dr.ModelId IS NOT NULL THEN dr.DailyReportId END) AS LatestDailyReportId,
+                    SUM(
+                        CASE
+                            WHEN (dr.ModelId IS NULL AND dr.IsActive = 0)
+                              OR (dr.ModelId IS NOT NULL AND dr.IsActive = 0 AND dr.Status = 'INACTIVE')
+                            THEN 1
+                            ELSE 0
+                        END
+                    ) AS InactiveMarkerCount
 
                 FROM DailyReport dr
 
@@ -503,7 +626,7 @@ public sealed class DailyReportsController(
 
                 status,
 
-                isActive = status != "INACTIVE",
+                isActive = reader.GetInt32(7) == 0,
 
                 submittedAt =
                     reader.IsDBNull(4)
@@ -625,19 +748,51 @@ public sealed class DailyReportsController(
 
             if (!request.IsActive)
             {
+                await using var submittedEntries =
+                    new SqlCommand(
+                        """
+                        SELECT COUNT(1)
+                        FROM DailyReport
+                        WHERE ReportDate = @ReportDate
+                          AND PlantId = @PlantId
+                          AND CustomerId = @CustomerId
+                          AND CategoryId = @CategoryId
+                          AND LineId = @LineId
+                          AND ModelId IS NOT NULL
+                          AND IsActive = 1
+                          AND Status IN ('SUBMITTED', 'APPROVED');
+                        """,
+                        connection,
+                        transaction);
+                Add(submittedEntries, "@ReportDate", SqlDbType.Date, request.ReportDate.Date);
+                Add(submittedEntries, "@PlantId", SqlDbType.Int, GetPlantId());
+                Add(submittedEntries, "@CustomerId", SqlDbType.Int, request.CustomerId);
+                Add(submittedEntries, "@CategoryId", SqlDbType.Int, request.CategoryId);
+                Add(submittedEntries, "@LineId", SqlDbType.Int, request.LineId);
+
+                if (Convert.ToInt32(await submittedEntries.ExecuteScalarAsync(cancellationToken)) > 0)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return Conflict(new
+                    {
+                        message = "A line with submitted or approved reports cannot be deactivated."
+                    });
+                }
+
                 await using var deactivate =
                     new SqlCommand(
                         """
                         UPDATE DailyReport
                         SET
                             IsActive = 0,
-                            Status = 'INACTIVE',
+                            Status = CASE WHEN Status = 'INACTIVE' THEN 'DRAFT' ELSE Status END,
                             UpdatedAt = SYSUTCDATETIME()
                         WHERE ReportDate = @ReportDate
                           AND PlantId = @PlantId
                           AND CustomerId = @CustomerId
                           AND CategoryId = @CategoryId
-                          AND LineId = @LineId;
+                          AND LineId = @LineId
+                          AND ModelId IS NOT NULL;
                         """,
                         connection,
                         transaction);
@@ -673,6 +828,17 @@ public sealed class DailyReportsController(
                 await using var marker =
                     new SqlCommand(
                         """
+                        UPDATE DailyReport
+                        SET IsActive = 0,
+                            Status = CASE WHEN Status = 'INACTIVE' THEN 'DRAFT' ELSE Status END,
+                            UpdatedAt = SYSUTCDATETIME()
+                        WHERE PlantId = @PlantId
+                          AND ReportDate = @ReportDate
+                          AND CustomerId = @CustomerId
+                          AND CategoryId = @CategoryId
+                          AND LineId = @LineId
+                          AND ModelId IS NULL;
+
                         IF NOT EXISTS
                         (
                             SELECT 1
@@ -682,6 +848,7 @@ public sealed class DailyReportsController(
                               AND CustomerId = @CustomerId
                               AND CategoryId = @CategoryId
                               AND LineId = @LineId
+                              AND ModelId IS NULL
                         )
                         BEGIN
                             INSERT INTO DailyReport
@@ -707,7 +874,7 @@ public sealed class DailyReportsController(
                                 @PlantId,
                                 NULL,
                                 @CreatedBy,
-                                'INACTIVE',
+                                'DRAFT',
                                 0,
                                 SYSUTCDATETIME(),
                                 SYSUTCDATETIME()
@@ -778,7 +945,8 @@ public sealed class DailyReportsController(
                           AND PlantId = @PlantId
                           AND CustomerId = @CustomerId
                           AND CategoryId = @CategoryId
-                          AND LineId = @LineId;
+                          AND LineId = @LineId
+                          AND ModelId IS NOT NULL;
                         """,
                         connection,
                         transaction);
@@ -820,7 +988,7 @@ public sealed class DailyReportsController(
                 message =
                     request.IsActive
                         ? "Line activated."
-                        : "Line marked inactive and daily values cleared."
+                        : "Line deactivated for this report date. Saved draft values are retained and can be restored by activating the line."
             });
         }
         catch
@@ -925,6 +1093,7 @@ public sealed class DailyReportsController(
               AND dr.LineId = @LineId
               AND dr.ReportDate = @ReportDate
               AND dr.ModelId IS NOT NULL
+              AND dr.IsActive = 1
 
             ORDER BY m.ModelName;
             """;
@@ -980,7 +1149,7 @@ public sealed class DailyReportsController(
                         ? null
                         : reader.GetString(2),
 
-                status = reader.GetString(3),
+                status = reader.GetString(3) == "INACTIVE" ? "DRAFT" : reader.GetString(3),
 
                 isActive = reader.GetBoolean(4),
 
@@ -1308,6 +1477,43 @@ public sealed class DailyReportsController(
             "DRAFT",
             cancellationToken);
 
+    [HttpDelete("draft/{dailyReportId:int}")]
+    public async Task<IActionResult> DeleteDraft(
+        int dailyReportId,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        if (userId <= 0)
+            return Unauthorized(new { message = "The current user could not be identified." });
+
+        await using var connection =
+            await connectionFactory.OpenAsync(cancellationToken);
+
+        const string sql = """
+            UPDATE DailyReport
+            SET IsActive = 0,
+                UpdatedAt = SYSUTCDATETIME()
+            WHERE DailyReportId = @DailyReportId
+              AND PlantId = @PlantId
+              AND CreatedBy = @UserId
+              AND IsActive = 1
+              AND ModelId IS NOT NULL
+              AND Status IN ('DRAFT', 'REJECTED');
+            SELECT @@ROWCOUNT;
+            """;
+
+        await using var command = new SqlCommand(sql, connection);
+        Add(command, "@DailyReportId", SqlDbType.Int, dailyReportId);
+        Add(command, "@PlantId", SqlDbType.Int, GetPlantId());
+        Add(command, "@UserId", SqlDbType.Int, userId);
+
+        var affected = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+        if (affected == 0)
+            return Conflict(new { message = "Only your active draft or rejected model reports can be deleted." });
+
+        return NoContent();
+    }
+
 
     // ============================================================
     // SUBMIT
@@ -1405,6 +1611,35 @@ public sealed class DailyReportsController(
                     return BadRequest(new { message="The submission batch key is already assigned to another report date or reporting scope." });
                 }
             }
+
+            const string inactiveLineSql = """
+                SELECT COUNT(1)
+                FROM DailyReport WITH (UPDLOCK, HOLDLOCK)
+                WHERE PlantId = @PlantId
+                  AND ReportDate = @ReportDate
+                  AND CustomerId = @CustomerId
+                  AND CategoryId = @CategoryId
+                  AND LineId = @LineId
+                  AND
+                  (
+                      (ModelId IS NULL AND IsActive = 0)
+                      OR (ModelId IS NOT NULL AND IsActive = 0 AND Status = 'INACTIVE')
+                  );
+                """;
+            await using (var inactiveLine = new SqlCommand(inactiveLineSql, connection, transaction))
+            {
+                Add(inactiveLine, "@PlantId", SqlDbType.Int, GetPlantId());
+                Add(inactiveLine, "@ReportDate", SqlDbType.Date, request.ReportDate.Date);
+                Add(inactiveLine, "@CustomerId", SqlDbType.Int, request.CustomerId);
+                Add(inactiveLine, "@CategoryId", SqlDbType.Int, request.CategoryId);
+                Add(inactiveLine, "@LineId", SqlDbType.Int, request.LineId);
+                if (Convert.ToInt32(await inactiveLine.ExecuteScalarAsync(cancellationToken)) > 0)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return Conflict(new { message = "Activate this line before saving or submitting its report." });
+                }
+            }
+
             var existing =
                 await FindReportAsync(
                     connection,
@@ -2027,6 +2262,12 @@ public sealed class DailyReportsController(
                 Over7DaysWOBalanceQty =
                     @Over7DaysWOBalanceQty,
 
+                wip_lying_greater_3_days =
+                    @WipLyingGreater3Days,
+
+                wip_lying_greater_7_days =
+                    @WipLyingGreater7Days,
+
                 DailyTRCInQty =
                     @DailyTRCInQty,
 
@@ -2240,6 +2481,18 @@ public sealed class DailyReportsController(
             "@Over7DaysWOBalanceQty",
             SqlDbType.Int,
             request.Over7DaysWOBalanceQty);
+
+        Add(
+            command,
+            "@WipLyingGreater3Days",
+            SqlDbType.Int,
+            request.WipLyingGreater3Days ?? 0);
+
+        Add(
+            command,
+            "@WipLyingGreater7Days",
+            SqlDbType.Int,
+            request.WipLyingGreater7Days ?? 0);
 
         // ========================================================
         // TRC
@@ -2555,6 +2808,22 @@ public sealed class DailyReportExcelImportRequest
     public int CategoryId { get; set; }
 
     public DateTime ReportDate { get; set; }
+
+    public string UploadType { get; set; } = "all";
+}
+
+public sealed class DailyReportUploadLockRequest
+{
+    public static readonly IReadOnlySet<string> ValidUploadTypes =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "ie", "production", "quality", "trc", "woClosure", "all"
+        };
+
+    public int CustomerId { get; set; }
+    public int CategoryId { get; set; }
+    public DateTime ReportDate { get; set; }
+    public string UploadType { get; set; } = "all";
 }
 
 
@@ -2705,6 +2974,10 @@ public sealed class DailyReportRequest
     public int? OpenWOQty { get; set; }
 
     public int? Over7DaysWOBalanceQty { get; set; }
+
+    public int? WipLyingGreater3Days { get; set; }
+
+    public int? WipLyingGreater7Days { get; set; }
 
 
     // ==============================================================
