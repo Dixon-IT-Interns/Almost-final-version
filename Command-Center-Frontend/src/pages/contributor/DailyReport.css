@@ -105,3 +105,8 @@
 .daily-matrix .matrix-value-field.review-field-red{border-color:#dc2626;background:#fff1f2}
 .daily-matrix .matrix-value-field.review-field-yellow{border-color:#d97706;background:#fffbeb}
 @media(max-width:760px){.matrix-validation-legend{gap:7px 12px;padding:9px 10px}}
+.date-report-actions{align-items:flex-start;flex-wrap:wrap}
+.date-report-actions>span{flex:1 1 100%;font:600 11px/1.45 var(--font-family-base)}
+.date-report-actions>.action-groups{flex:1 1 auto;justify-content:flex-start}
+.date-report-actions>.primary-action{margin-left:auto}
+@media(max-width:760px){.date-report-actions>.primary-action{margin-left:0}}

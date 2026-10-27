@@ -14,7 +14,7 @@ const EMPTY_FORM = {
   monthPlan: "", monthActual: "",
   productionPlan: "", productionActual: "",
   uphTarget: "", uphActual: "",
-  upphTarget: "", upphInstalled: "", upphActual: "",
+  upphInstalled: "", upphActual: "",
   cphTarget: "", cphActual: "",
   fpyTarget: "", fpyActual: "",
   ftyTarget: "", ftyActual: "",
@@ -38,7 +38,7 @@ const GROUPS = [
       { label: "Month Plan", fields: [{ key: "monthPlan", label: "Plan" }, { key: "monthActual", label: "Actual" }] },
       { label: "Production", fields: [{ key: "productionPlan", label: "Plan" }, { key: "productionActual", label: "Actual" }] },
       { label: "UPH", fields: [{ key: "uphTarget", label: "Target" }, { key: "uphActual", label: "Actual" }] },
-      { label: "UPPH", fields: [{ key: "upphTarget", label: "Target" }, { key: "upphActual", label: "Actual" }] },
+      { label: "UPPH", fields: [{ key: "upphInstalled", label: "Installed" }, { key: "upphActual", label: "Actual" }] },
       { label: "CPH", fields: [{ key: "cphTarget", label: "Target" }, { key: "cphActual", label: "Actual" }] },
     ],
   },
@@ -84,7 +84,7 @@ const GROUPS = [
 ];
 
 const KPI_PLAN_FIELDS = [
-  "productionPlan", "uphTarget", "upphTarget", "cphTarget",
+  "productionPlan", "uphTarget", "cphTarget",
   "fpyTarget", "ftyTarget", "rtyTarget", "osdTarget", "otTarget",
 ];
 
@@ -105,7 +105,7 @@ const INTEGER_FIELDS = new Set([
 
 const NUMERIC_FIELDS = new Set([
   "monthPlan", "monthActual", "productionPlan", "productionActual",
-  "uphTarget", "uphActual", "upphTarget", "upphInstalled", "upphActual",
+  "uphTarget", "uphActual", "upphInstalled", "upphActual",
   "cphTarget", "cphActual", "fpyTarget", "fpyActual", "ftyTarget", "ftyActual",
   "rtyTarget", "rtyActual", "osdTarget", "osdReportingDateValue",
   "osdReportingDatePercent", "osdMtdValue", "osdMtdPercent", "otTarget",
@@ -119,7 +119,6 @@ const ACTUAL_TARGET_FIELDS = {
   monthActual: "monthPlan",
   productionActual: "productionPlan",
   uphActual: "uphTarget",
-  upphActual: "upphTarget",
   cphActual: "cphTarget",
   fpyActual: "fpyTarget",
   ftyActual: "ftyTarget",
@@ -188,7 +187,7 @@ const UPLOAD_TYPES = [
 
 const UPLOAD_FIELD_KEYS = {
   ie: ["cphTarget", "cphActual"],
-  production: ["monthPlan", "monthActual", "productionPlan", "productionActual", "uphTarget", "uphActual", "upphTarget", "upphInstalled", "upphActual", "cphTarget", "cphActual", "osdReportingDateValue", "osdReportingDatePercent", "osdMtdValue", "osdMtdPercent", "issueDescription"],
+  production: ["monthPlan", "monthActual", "productionPlan", "productionActual", "uphTarget", "uphActual", "upphInstalled", "upphActual", "cphTarget", "cphActual", "osdReportingDateValue", "osdReportingDatePercent", "osdMtdValue", "osdMtdPercent", "issueDescription"],
   quality: ["fpyTarget", "fpyActual", "ftyTarget", "ftyActual", "rtyTarget", "rtyActual"],
   trc: ["dailyTRCInQty", "dailyTRCOutQty", "trcOverallFailureInflowPercent", "trcLyingOver3DaysCr"],
   woClosure: [],
@@ -251,7 +250,6 @@ const FATP_IMPORT_PREVIEW_FIELDS = [
 
 const IMPORT_PREVIEW_FIELDS = [
   ...FATP_IMPORT_PREVIEW_FIELDS,
-  ["UPPH Target", "upphTarget"],
   ["CPH Target", "cphTarget"], ["CPH Actual", "cphActual"],
   ["FPY Target", "fpyTarget"], ["FPY Actual", "fpyActual"],
   ["FTY Target", "ftyTarget"], ["FTY Actual", "ftyActual"],
@@ -391,7 +389,7 @@ export default function DailyReport({ session, onSignOut }) {
                 if (uploadType === "ie")
                   return key === "cphTarget" || key === "cphActual";
                 return isSmtCategory
-                  ? key !== "upphTarget" && key !== "upphInstalled" && key !== "upphActual"
+                  ? key !== "upphInstalled" && key !== "upphActual"
                   : key !== "cphTarget" && key !== "cphActual";
               }),
             }))
@@ -864,7 +862,6 @@ export default function DailyReport({ session, onSignOut }) {
     monthPlan: asNumber(entry.form.monthPlan), monthActual: asNumber(entry.form.monthActual),
     productionPlan: asNumber(entry.form.productionPlan), productionActual: asNumber(entry.form.productionActual),
     uphTarget: asNumber(entry.form.uphTarget), uphActual: asNumber(entry.form.uphActual),
-    upphTarget: isSmtCategory ? null : asNumber(entry.form.upphTarget),
     upphInstalled: isSmtCategory ? null : asNumber(entry.form.upphInstalled),
     upphActual: isSmtCategory ? null : asNumber(entry.form.upphActual),
     cphTarget: isSmtCategory ? asNumber(entry.form.cphTarget) : null,
@@ -884,12 +881,12 @@ export default function DailyReport({ session, onSignOut }) {
     trcLyingOver3DaysCr: asNumber(entry.form.trcLyingOver3DaysCr), issueDescription: entry.form.issueDescription?.trim() || null,
   });
 
-  const saveLine = async (lineId, submit) => {
+  const validateLine = (lineId) => {
     const line = lineData[lineId];
-    if (!line?.isActive) return setError("Activate the line before saving or submitting it.");
-    if (!line.entries.length) return setError(`Add at least one model to ${getLineName(lineId)}.`);
+    if (!line?.isActive) return `Activate the line before saving or submitting it.`;
+    if (!line.entries.length) return `Add at least one model to ${getLineName(lineId)}.`;
     if (new Set(line.entries.map((entry) => String(entry.modelId))).size !== line.entries.length) {
-      return setError(`${getLineName(lineId)} contains the same model more than once.`);
+      return `${getLineName(lineId)} contains the same model more than once.`;
     }
     const invalidText = line.entries.flatMap((entry) => [...NUMERIC_FIELDS]
       .filter((field) => {
@@ -900,20 +897,26 @@ export default function DailyReport({ session, onSignOut }) {
       })
       .map((field) => `${entry.modelName}: ${field}`));
     if (invalidText.length)
-      return setError(`Use a number, N/P or N/A in numeric report fields. Check ${invalidText.slice(0, 3).join(", ")}.`);
-    setBusy(`${submit ? "submit" : "save"}-${lineId}`); setError(""); setNotice("");
+      return `Use a number, N/P or N/A in numeric report fields. Check ${invalidText.slice(0, 3).join(", ")}.`;
+    const missingModel = line.entries.find((entry) => !entry.modelId);
+    if (missingModel) return `Select a model for every column in ${getLineName(lineId)}.`;
+    return "";
+  };
+
+  const saveLineDraft = async (lineId) => {
+    const validationError = validateLine(lineId);
+    if (validationError) return setError(validationError);
+    const line = lineData[lineId];
+    const entriesToSave = line.entries.filter((entry) => !["SUBMITTED", "APPROVED"].includes(entry.status));
+    if (!entriesToSave.length) {
+      setNotice(`${getLineName(lineId)} is already submitted and locked.`);
+      return;
+    }
+    setBusy(`save-${lineId}`); setError(""); setNotice("");
     try {
-      const reportKey = `${customerId}:${categoryId}:${reportDate}`;
-      if (submissionBatch.current.key !== reportKey) submissionBatch.current = { key: reportKey, id: "" };
-      if (submit && !submissionBatch.current.id) {
-        submissionBatch.current.id = globalThis.crypto?.randomUUID?.() || "";
-        if (!submissionBatch.current.id) throw new Error("Secure report submission IDs require a modern browser or HTTPS.");
-      }
-      const batchId = submit ? submissionBatch.current.id : null;
-      for (const entry of line.entries) {
-        if (!entry.modelId) throw new Error(`Select a model for every column in ${getLineName(lineId)}.`);
-        const saved = await api.post(`/daily-reports/${submit ? "submit" : "draft"}`, buildPayload(lineId, entry, batchId));
-        const savedStatus = saved?.status || (submit ? "SUBMITTED" : "DRAFT");
+      for (const entry of entriesToSave) {
+        const saved = await api.post("/daily-reports/draft", buildPayload(lineId, entry));
+        const savedStatus = saved?.status || "DRAFT";
         setLineData((current) => {
           const currentLine = current[lineId];
           if (!currentLine) return current;
@@ -922,7 +925,6 @@ export default function DailyReport({ session, onSignOut }) {
             : {
                 ...currentEntry,
                 dailyReportId: saved?.dailyReportId ?? currentEntry.dailyReportId,
-                submissionBatchId: saved?.submissionBatchId ?? batchId ?? currentEntry.submissionBatchId,
                 status: savedStatus,
                 isNew: false,
                 initialForm: { ...entry.form },
@@ -938,12 +940,78 @@ export default function DailyReport({ session, onSignOut }) {
               : "IN_PROGRESS";
           return { ...current, [lineId]: { ...currentLine, status: lineStatus, entries } };
         });
-
       }
-      setNotice(`${getLineName(lineId)} ${submit ? "submitted for approval" : "draft saved"}.`);
+      setNotice(`${getLineName(lineId)} draft saved.`);
     } catch (e) {
-      setError(e.message || "Unable to save the report.");
+      setError(e.message || "Unable to save the draft.");
     } finally { setBusy(""); }
+  };
+
+  const submitDateReport = async () => {
+    const activeLines = lines.filter((line) => lineData[line.lineId]?.isActive !== false);
+    if (!activeLines.length) {
+      setError("Activate at least one line before submitting this date's report.");
+      return;
+    }
+
+    for (const line of activeLines) {
+      const validationError = validateLine(line.lineId);
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+    }
+
+    const entriesToSave = activeLines.flatMap((line) => (
+      (lineData[line.lineId]?.entries || [])
+        .filter((entry) => !["SUBMITTED", "APPROVED"].includes(entry.status))
+        .map((entry) => ({ lineId: line.lineId, entry }))
+    ));
+    setBusy("submit-date");
+    setError("");
+    setNotice("");
+    try {
+      const reportKey = `${customerId}:${categoryId}:${reportDate}`;
+      if (submissionBatch.current.key !== reportKey)
+        submissionBatch.current = { key: reportKey, id: "" };
+      if (!submissionBatch.current.id) {
+        submissionBatch.current.id = globalThis.crypto?.randomUUID?.() || "";
+        if (!submissionBatch.current.id)
+          throw new Error("Secure report submission IDs require a modern browser or HTTPS.");
+      }
+
+      const batchId = submissionBatch.current.id;
+      for (const { lineId, entry } of entriesToSave) {
+        await api.post("/daily-reports/draft", buildPayload(lineId, entry));
+        setLineData((current) => {
+          const currentLine = current[lineId];
+          if (!currentLine) return current;
+          const entries = currentLine.entries.map((currentEntry) => currentEntry.entryId !== entry.entryId
+            ? currentEntry
+            : {
+                ...currentEntry,
+                status: "DRAFT",
+                isNew: false,
+                initialForm: { ...entry.form },
+                planEditedFields: KPI_PLAN_FIELDS.filter((field) => (
+                  asNumber(currentEntry.form[field]) !== asNumber(entry.form[field])
+                )),
+              });
+          return { ...current, [lineId]: { ...currentLine, status: "IN_PROGRESS", entries } };
+        });
+      }
+      await api.post("/daily-reports/submit-date", {
+        customerId: Number(customerId),
+        reportDate,
+        submissionBatchId: batchId,
+      });
+      await loadReport(false);
+      setNotice(`FATP and SMT reports for ${reportDate} were submitted together for approval.`);
+    } catch (e) {
+      setError(e.message || "Unable to submit the full date report. Saved drafts are retained.");
+    } finally {
+      setBusy("");
+    }
   };
 
   function stageSmtPreview(preview) {
@@ -1403,7 +1471,9 @@ export default function DailyReport({ session, onSignOut }) {
   };
 
   const completed = lines.filter((line) => lineData[line.lineId]?.isActive === false
-    || ["SUBMITTED", "APPROVED"].includes(lineData[line.lineId]?.status)).length;
+    || (lineData[line.lineId]?.entries?.length || 0) > 0).length;
+  const activeReportLines = lines.filter((line) => lineData[line.lineId]?.isActive !== false);
+  const linesMissingEntries = activeReportLines.filter((line) => !lineData[line.lineId]?.entries?.length);
 
   return (
     <ContributorLayout user={session?.user} onSignOut={onSignOut}>
@@ -1426,6 +1496,7 @@ export default function DailyReport({ session, onSignOut }) {
                 <select
                   aria-label="Select FATP or SMT report"
                   value={String(categoryId)}
+                  disabled={Boolean(busy) || loading}
                   onChange={(event) => {
                     const nextCategory = reportCategories.find(
                       (item) => Number(item.categoryId) === Number(event.target.value)
@@ -1477,7 +1548,7 @@ export default function DailyReport({ session, onSignOut }) {
           <div className="report-context-bar">
             <div><span>BRAND</span><strong>{customer?.customerName || "—"}</strong></div>
             <div><span>CATEGORY</span><strong>{category?.categoryName || "—"}</strong></div>
-            <label><span>REPORT DATE</span><input type="date" max={today()} value={reportDate} onChange={(e) => changeReportDate(e.target.value)} /></label>
+            <label><span>REPORT DATE</span><input type="date" max={today()} value={reportDate} disabled={Boolean(busy) || loading} onChange={(e) => changeReportDate(e.target.value)} /></label>
             <div><span>PROGRESS</span><strong>{completed}/{lines.length} lines completed</strong></div>
           </div>
 
@@ -1667,21 +1738,32 @@ export default function DailyReport({ session, onSignOut }) {
                   const data = lineData[line.lineId] || { entries: [], models: [] };
                   const available = (data.models || []).filter((m) => !data.entries.some((e) => String(e.modelId) === String(m.modelId)));
                   if (!available.length) return null;
-                  return <div className="line-add-model" key={line.lineId}><strong>{line.lineName}</strong><AddModelSelect models={available} onSelect={(id) => addModel(line.lineId, id)} disabled={!data.isActive} /></div>;
+                  return <div className="line-add-model" key={line.lineId}><strong>{line.lineName}</strong><AddModelSelect models={available} onSelect={(id) => addModel(line.lineId, id)} disabled={!data.isActive || Boolean(busy)} /></div>;
                 })}
               </div>
 
-              <div className="matrix-actions">
+              <div className="matrix-actions date-report-actions">
+                <span>
+                  {linesMissingEntries.length
+                    ? `Add at least one model/report to every active line in this category. The final submit also requires complete FATP and SMT drafts for this date.`
+                    : "Save drafts by line in both FATP and SMT. One final submit sends both categories when every active line is reported; inactive lines are excluded."}
+                </span>
                 <div className="action-groups">
                   {lines.map((line) => {
                     const data = lineData[line.lineId] || { entries: [] };
                     if (!data.entries.length) return null;
                     return <div className="line-action-group" key={line.lineId}><strong>{line.lineName}</strong>
-                      <button className="secondary-action" disabled={busy === `save-${line.lineId}` || data.isActive === false} onClick={() => saveLine(line.lineId, false)}>{busy === `save-${line.lineId}` ? <Loader2 size={14} className="spin" /> : "Save Draft"}</button>
-                      <button className="primary-action" disabled={busy === `submit-${line.lineId}` || data.isActive === false} onClick={() => saveLine(line.lineId, true)}>{busy === `submit-${line.lineId}` ? <Loader2 size={14} className="spin" /> : <><Send size={14} /> Submit</>}</button>
+                      <button className="secondary-action" disabled={Boolean(busy) || data.isActive === false} onClick={() => saveLineDraft(line.lineId)}>{busy === `save-${line.lineId}` ? <Loader2 size={14} className="spin" /> : "Save Draft"}</button>
                     </div>;
                   })}
                 </div>
+                <button
+                  className="primary-action"
+                  disabled={loading || !reportLoaded || isImporting || Boolean(busy) || Boolean(importPreview) || !activeReportLines.length || linesMissingEntries.length > 0}
+                  onClick={submitDateReport}
+                >
+                  {busy === "submit-date" ? <Loader2 size={14} className="spin" /> : <><Send size={14} /> Submit Full Date Report (FATP + SMT)</>}
+                </button>
               </div>
             </section>
           )}
@@ -1728,7 +1810,7 @@ function MatrixTable({ groups, lines, lineData, onChange, onAddModel, onRemoveMo
                   className="matrix-line-toggle"
                   aria-label={`${data.isActive === false ? "Activate" : "Deactivate"} ${line.lineName}`}
                   title={hasSubmittedEntries ? "Submitted or approved reports prevent line deactivation." : `${data.isActive === false ? "Activate" : "Deactivate"} this line for the selected report date`}
-                  disabled={busy === `line-status-${line.lineId}` || loading || (data.isActive !== false && hasSubmittedEntries)}
+                  disabled={Boolean(busy) || loading || (data.isActive !== false && hasSubmittedEntries)}
                   onClick={() => onToggleLine(line)}
                 >
                   {busy === `line-status-${line.lineId}`
@@ -1744,7 +1826,7 @@ function MatrixTable({ groups, lines, lineData, onChange, onAddModel, onRemoveMo
             const data = lineData[line.lineId] || { entries: [], models: [], isActive: true };
             if (!data.entries.length)
               return <th key={line.lineId} className="model-head empty-model-head">
-                <AddModelSelect models={data.models || []} onSelect={(id) => onAddModel(line.lineId, id)} disabled={data.isActive === false} />
+                <AddModelSelect models={data.models || []} onSelect={(id) => onAddModel(line.lineId, id)} disabled={data.isActive === false || Boolean(busy)} />
               </th>;
             return data.entries.map((entry) => (
               <th key={entry.entryId} className="model-head" data-entry-id={entry.entryId}>
@@ -1756,8 +1838,8 @@ function MatrixTable({ groups, lines, lineData, onChange, onAddModel, onRemoveMo
                   {entry.planStatus === "error" && <small className="plan-status error" title={entry.planError}>KPI plan unavailable; daily report remains editable.</small>}
                   {entry.planStatus === "ambiguous" && <small className="plan-status ambiguous" title={entry.planError}>Multiple monthly plans match; targets not prefilled.</small>}
                   {entry.isNew
-                    ? <button onClick={() => onRemoveModel(line.lineId, entry.entryId)} title="Remove model"><Trash2 size={13} /></button>
-                    : ["DRAFT", "REJECTED"].includes(entry.status) && <button onClick={() => onDeleteDraft(line.lineId, entry)} disabled={busy === `delete-${entry.entryId}`} title="Delete saved draft" aria-label={`Delete saved draft for ${entry.modelName}`}><Trash2 size={13} /></button>}
+                    ? <button onClick={() => onRemoveModel(line.lineId, entry.entryId)} disabled={Boolean(busy)} title="Remove model"><Trash2 size={13} /></button>
+                    : ["DRAFT", "REJECTED"].includes(entry.status) && <button onClick={() => onDeleteDraft(line.lineId, entry)} disabled={Boolean(busy)} title="Delete saved draft" aria-label={`Delete saved draft for ${entry.modelName}`}><Trash2 size={13} /></button>}
                 </div>
               </th>
             ));
@@ -1766,13 +1848,13 @@ function MatrixTable({ groups, lines, lineData, onChange, onAddModel, onRemoveMo
     </thead>
     <tbody>
       {groups.map((group) => (
-        <MatrixGroup key={group.title} group={group} columns={columns} lineData={lineData} onChange={onChange} lockedUploadTypes={lockedUploadTypes} onValidationOverride={onValidationOverride} />
+        <MatrixGroup key={group.title} group={group} columns={columns} lineData={lineData} onChange={onChange} lockedUploadTypes={lockedUploadTypes} onValidationOverride={onValidationOverride} busy={busy} />
       ))}
     </tbody>
   </table>;
 }
 
-function MatrixGroup({ group, columns, lineData, onChange, lockedUploadTypes, onValidationOverride }) {
+function MatrixGroup({ group, columns, lineData, onChange, lockedUploadTypes, onValidationOverride, busy }) {
   return <>
     <tr className="group-row">
       <th className="sticky-col group-label">{group.title}</th>
@@ -1786,6 +1868,7 @@ function MatrixGroup({ group, columns, lineData, onChange, lockedUploadTypes, on
           <div className="matrix-values-grid">
             {row.fields.map(({ key, label }) => {
               const disabled = isFieldLocked(key, lockedUploadTypes)
+                || Boolean(busy)
                 || entry.status === "APPROVED"
                 || entry.status === "SUBMITTED"
                 || lineData[lineId]?.isActive === false;

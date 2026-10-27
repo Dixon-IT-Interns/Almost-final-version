@@ -114,14 +114,24 @@ public sealed class ApprovalController(
                 CASE WHEN dr.SubmissionBatchEnforced=1 THEN
                     (SELECT COUNT(1) FROM DailyReport other
                      WHERE other.PlantId=dr.PlantId AND other.ReportDate=dr.ReportDate AND other.CustomerId=dr.CustomerId
-                       AND other.CategoryId=dr.CategoryId AND other.CreatedBy=dr.CreatedBy AND other.IsActive=1 AND other.ModelId IS NOT NULL
+                       AND other.CreatedBy=dr.CreatedBy AND other.IsActive=1 AND other.ModelId IS NOT NULL
+                       AND ((EXISTS(SELECT 1 FROM DailyReport batchPeer WHERE batchPeer.SubmissionBatchId=dr.SubmissionBatchId AND batchPeer.CategoryId<>dr.CategoryId)
+                             AND other.CategoryId IN (SELECT scopeCategory.CategoryId FROM Category scopeCategory
+                                 WHERE scopeCategory.PlantId=dr.PlantId AND scopeCategory.CustomerId=dr.CustomerId
+                                   AND scopeCategory.IsActive=1 AND UPPER(scopeCategory.CategoryName) IN ('FATP','SMT')))
+                         OR (NOT EXISTS(SELECT 1 FROM DailyReport batchPeer WHERE batchPeer.SubmissionBatchId=dr.SubmissionBatchId AND batchPeer.CategoryId<>dr.CategoryId)
+                             AND other.CategoryId=dr.CategoryId))
                        AND other.Status NOT IN ('APPROVED','INACTIVE')
                        AND (other.Status<>'SUBMITTED' OR other.SubmissionBatchId<>dr.SubmissionBatchId))
                     + (SELECT COUNT(1) FROM ProductionLine pl INNER JOIN Category cat ON cat.CategoryId=pl.CategoryId
                        WHERE pl.PlantId=dr.PlantId AND pl.IsActive=1 AND cat.PlantId=dr.PlantId AND cat.CustomerId=dr.CustomerId
-                         AND cat.CategoryId=dr.CategoryId AND cat.IsActive=1
+                         AND cat.IsActive=1
+                         AND ((EXISTS(SELECT 1 FROM DailyReport batchPeer WHERE batchPeer.SubmissionBatchId=dr.SubmissionBatchId AND batchPeer.CategoryId<>dr.CategoryId)
+                               AND UPPER(cat.CategoryName) IN ('FATP','SMT'))
+                           OR (NOT EXISTS(SELECT 1 FROM DailyReport batchPeer WHERE batchPeer.SubmissionBatchId=dr.SubmissionBatchId AND batchPeer.CategoryId<>dr.CategoryId)
+                               AND cat.CategoryId=dr.CategoryId))
                          AND NOT EXISTS(SELECT 1 FROM DailyReport lineState WHERE lineState.PlantId=dr.PlantId AND lineState.ReportDate=dr.ReportDate
-                           AND lineState.CustomerId=dr.CustomerId AND lineState.CategoryId=dr.CategoryId AND lineState.LineId=pl.LineId
+                           AND lineState.CustomerId=dr.CustomerId AND lineState.CategoryId=cat.CategoryId AND lineState.LineId=pl.LineId
                            AND lineState.CreatedBy=dr.CreatedBy AND ((lineState.ModelId IS NULL AND lineState.IsActive=0) OR (lineState.ModelId IS NOT NULL AND lineState.IsActive=1))))
                     ELSE 0 END AS IncompleteCount
             FROM ApprovalQueue aq
@@ -676,7 +686,7 @@ public sealed class ApprovalController(
                 INNER JOIN PlantCustomer pc ON pc.PlantId=dr.PlantId AND pc.CustomerId=dr.CustomerId
                 WHERE dr.SubmissionBatchId=@BatchId AND dr.PlantId=@PlantId AND dr.IsActive=1 AND dr.ModelId IS NOT NULL;
                 """;
-            var ids=new List<int>();DateTime? batchDate=null;int batchCustomer=0,batchCategory=0,batchSubmitter=0;bool batchEnforced=false;
+            var ids=new List<int>();var batchCategoryIds=new HashSet<int>();DateTime? batchDate=null;int batchCustomer=0,batchSubmitter=0;bool batchEnforced=false;
             await using(var rowsCommand=new SqlCommand(rowsSql,connection,tx))
             {
                 Add(rowsCommand,"@BatchId",SqlDbType.UniqueIdentifier,batchId); Add(rowsCommand,"@PlantId",SqlDbType.Int,plantId); Add(rowsCommand,"@UserId",SqlDbType.Int,userId);
@@ -685,7 +695,7 @@ public sealed class ApprovalController(
                 {
                     if(reader.GetString(1)!="PENDING"||reader.GetString(2)!="SUBMITTED")
                     { await tx.RollbackAsync(cancellationToken); return Conflict(new { message="Every active line/model entry in this daily batch must be submitted and pending before the batch can be reviewed." }); }
-                    batchDate ??=reader.GetDateTime(3);batchCustomer=reader.GetInt32(4);batchCategory=reader.GetInt32(5);batchSubmitter=reader.GetInt32(6);
+                    batchDate ??=reader.GetDateTime(3);batchCustomer=reader.GetInt32(4);batchCategoryIds.Add(reader.GetInt32(5));batchSubmitter=reader.GetInt32(6);
                     batchEnforced |= reader.GetBoolean(7);
                     ids.Add(reader.GetInt32(0));
                 }
@@ -693,14 +703,23 @@ public sealed class ApprovalController(
             if(ids.Count==0){await tx.RollbackAsync(cancellationToken);return NotFound(new { message="Batch not found or outside your plant/customer assignment." });}
             if(batchEnforced)
             {
+                var batchAcrossCategories=batchCategoryIds.Count>1;
                 const string incompleteSql="""
                     SELECT
-                      (SELECT COUNT(1) FROM DailyReport WITH (UPDLOCK,HOLDLOCK) WHERE PlantId=@PlantId AND ReportDate=@Date AND CustomerId=@CustomerId AND CategoryId=@CategoryId AND CreatedBy=@Submitter AND IsActive=1 AND ModelId IS NOT NULL AND Status NOT IN ('APPROVED','INACTIVE') AND (Status<>'SUBMITTED' OR SubmissionBatchId<>@BatchId))
+                      (SELECT COUNT(1) FROM DailyReport dr WITH (UPDLOCK,HOLDLOCK)
+                       INNER JOIN Category cat ON cat.CategoryId=dr.CategoryId
+                       WHERE dr.PlantId=@PlantId AND dr.ReportDate=@Date AND dr.CustomerId=@CustomerId AND dr.CreatedBy=@Submitter
+                         AND dr.IsActive=1 AND dr.ModelId IS NOT NULL AND dr.Status NOT IN ('APPROVED','INACTIVE')
+                         AND (dr.Status<>'SUBMITTED' OR dr.SubmissionBatchId<>@BatchId)
+                         AND ((@AcrossCategories=0 AND dr.CategoryId=@CategoryId)
+                           OR (@AcrossCategories=1 AND cat.PlantId=@PlantId AND cat.IsActive=1 AND UPPER(cat.CategoryName) IN ('FATP','SMT'))))
                       + (SELECT COUNT(1) FROM ProductionLine pl INNER JOIN Category cat ON cat.CategoryId=pl.CategoryId
-                         WHERE pl.PlantId=@PlantId AND pl.IsActive=1 AND cat.PlantId=@PlantId AND cat.CustomerId=@CustomerId AND cat.CategoryId=@CategoryId AND cat.IsActive=1
-                           AND NOT EXISTS(SELECT 1 FROM DailyReport lineState WHERE lineState.PlantId=@PlantId AND lineState.ReportDate=@Date AND lineState.CustomerId=@CustomerId AND lineState.CategoryId=@CategoryId AND lineState.LineId=pl.LineId AND lineState.CreatedBy=@Submitter AND ((lineState.ModelId IS NULL AND lineState.IsActive=0) OR (lineState.ModelId IS NOT NULL AND lineState.IsActive=1))));
+                         WHERE pl.PlantId=@PlantId AND pl.IsActive=1 AND cat.PlantId=@PlantId AND cat.CustomerId=@CustomerId AND cat.IsActive=1
+                           AND ((@AcrossCategories=0 AND cat.CategoryId=@CategoryId)
+                             OR (@AcrossCategories=1 AND UPPER(cat.CategoryName) IN ('FATP','SMT')))
+                           AND NOT EXISTS(SELECT 1 FROM DailyReport lineState WHERE lineState.PlantId=@PlantId AND lineState.ReportDate=@Date AND lineState.CustomerId=@CustomerId AND lineState.CategoryId=cat.CategoryId AND lineState.LineId=pl.LineId AND lineState.CreatedBy=@Submitter AND ((lineState.ModelId IS NULL AND lineState.IsActive=0) OR (lineState.ModelId IS NOT NULL AND lineState.IsActive=1))));
                     """;
-                await using var incomplete=new SqlCommand(incompleteSql,connection,tx);Add(incomplete,"@PlantId",SqlDbType.Int,plantId);Add(incomplete,"@Date",SqlDbType.Date,batchDate);Add(incomplete,"@CustomerId",SqlDbType.Int,batchCustomer);Add(incomplete,"@CategoryId",SqlDbType.Int,batchCategory);Add(incomplete,"@Submitter",SqlDbType.Int,batchSubmitter);Add(incomplete,"@BatchId",SqlDbType.UniqueIdentifier,batchId);
+                await using var incomplete=new SqlCommand(incompleteSql,connection,tx);Add(incomplete,"@PlantId",SqlDbType.Int,plantId);Add(incomplete,"@Date",SqlDbType.Date,batchDate);Add(incomplete,"@CustomerId",SqlDbType.Int,batchCustomer);Add(incomplete,"@CategoryId",SqlDbType.Int,batchCategoryIds.First());Add(incomplete,"@AcrossCategories",SqlDbType.Bit,batchAcrossCategories);Add(incomplete,"@Submitter",SqlDbType.Int,batchSubmitter);Add(incomplete,"@BatchId",SqlDbType.UniqueIdentifier,batchId);
                 if(Convert.ToInt32(await incomplete.ExecuteScalarAsync(cancellationToken))>0){await tx.RollbackAsync(cancellationToken);return Conflict(new{message="This reporting date has draft or unsubmitted model entries, or active lines without a submitted report. Submit each active line or mark unused lines inactive before reviewing the complete daily batch."});}
             }
             var seen=new HashSet<(int,string)>(new FieldAnnotationKeyComparer());
@@ -1226,6 +1245,8 @@ public sealed class ApprovalController(
 
                     OpenWOQty = dr.OpenWOQty,
                     Over7DaysWOBalanceQty = dr.Over7DaysWOBalanceQty,
+                    wip_lying_greater_3_days = dr.wip_lying_greater_3_days,
+                    wip_lying_greater_7_days = dr.wip_lying_greater_7_days,
 
                     DailyTRCInQty = dr.DailyTRCInQty,
                     DailyTRCOutQty = dr.DailyTRCOutQty,
@@ -1289,6 +1310,8 @@ public sealed class ApprovalController(
 
                     OpenWOQty,
                     Over7DaysWOBalanceQty,
+                    wip_lying_greater_3_days,
+                    wip_lying_greater_7_days,
 
                     DailyTRCInQty,
                     DailyTRCOutQty,
@@ -1345,6 +1368,8 @@ public sealed class ApprovalController(
 
                     dr.OpenWOQty,
                     dr.Over7DaysWOBalanceQty,
+                    dr.wip_lying_greater_3_days,
+                    dr.wip_lying_greater_7_days,
 
                     dr.DailyTRCInQty,
                     dr.DailyTRCOutQty,

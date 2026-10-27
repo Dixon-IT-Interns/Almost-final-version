@@ -9,7 +9,7 @@ const REPORT_SECTIONS=[
   {label:"Month Plan",fields:[["Plan","monthPlan"],["Actual","monthActual"]]},
   {label:"Production",fields:[["Plan","productionPlan"],["Actual","productionActual"]]},
   {label:"UPH",fields:[["Target","uphTarget"],["Actual","uphActual"]]},
-  {label:"UPPH",fields:[["Target","upphTarget"],["Installed","upphInstalled"],["Actual","upphActual"]]},
+  {label:"UPPH",fields:[["Installed","upphInstalled"],["Actual","upphActual"]]},
   {label:"CPH",fields:[["Target","cphTarget"],["Actual","cphActual"]]},
  ]},
  {title:"Quality",rows:[
@@ -35,10 +35,10 @@ const REPORT_SECTIONS=[
  {title:"Issue",rows:[{label:"Issue Description",fields:[["Description","issueDescription"]]}]},
 ];
 const FIELD_LABELS=new Map(REPORT_SECTIONS.flatMap(section=>section.rows.flatMap(row=>row.fields.map(([label,key])=>[key,`${row.label} · ${label}`]))));
-const TARGET_FIELDS=new Set(["monthPlan","productionPlan","uphTarget","upphTarget","cphTarget","fpyTarget","ftyTarget","rtyTarget","osdTarget","otTarget"]);
+const TARGET_FIELDS=new Set(["monthPlan","productionPlan","uphTarget","cphTarget","fpyTarget","ftyTarget","rtyTarget","osdTarget","otTarget"]);
 const PERCENTAGE_FIELDS=new Set(["fpyTarget","fpyActual","ftyTarget","ftyActual","rtyTarget","rtyActual","osdReportingDatePercent","osdMtdPercent","trcOverallFailureInflowPercent"]);
 const INTEGER_FIELDS=new Set(["openWOQty","over7DaysWOBalanceQty","dailyTRCInQty","dailyTRCOutQty"]);
-const TARGET_FOR_FIELD={monthActual:"monthPlan",productionActual:"productionPlan",uphActual:"uphTarget",upphActual:"upphTarget",cphActual:"cphTarget",fpyActual:"fpyTarget",ftyActual:"ftyTarget",rtyActual:"rtyTarget",actualOTManhours:"otTarget"};
+const TARGET_FOR_FIELD={monthActual:"monthPlan",productionActual:"productionPlan",uphActual:"uphTarget",cphActual:"cphTarget",fpyActual:"fpyTarget",ftyActual:"ftyTarget",rtyActual:"rtyTarget",actualOTManhours:"otTarget"};
 const isGuid=value=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value||"");
 const today=()=>new Date().toISOString().slice(0,10);const daysAgo=n=>{const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().slice(0,10)};
 export default function ApprovalPage({session,onSignOut}){

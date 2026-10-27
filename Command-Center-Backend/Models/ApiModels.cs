@@ -28,12 +28,19 @@ public sealed record UserResponse(
     int PlantId,
     string PlantName,
     bool IsActive,
-    IReadOnlyList<UserCustomerResponse> Customers);
+    IReadOnlyList<UserCustomerResponse> Customers,
+    ViewerAccessSummary? ViewerAccess = null);
 /// <summary>Fields required to add a user.</summary>
 /// 
 public sealed record UserCustomerResponse(
     int CustomerId,
     string CustomerName);
+public sealed record ViewerAccessSummary(
+    bool Configured,
+    bool AllPlants,
+    bool AllCustomers,
+    IReadOnlyList<string> PlantNames,
+    IReadOnlyList<string> CustomerNames);
 public sealed record CreateUserRequest
 {
     [Required, MaxLength(100)]
@@ -101,6 +108,13 @@ public sealed record ProductionLineResponse(int LineId, string LineName, string?
 
 public sealed record UpdateUserCustomersRequest(IReadOnlyList<int> CustomerIds);
 public sealed record UpdateUserActiveRequest(bool IsActive);
+public sealed record ViewerAccessUpdateRequest(
+    bool AllPlants,
+    bool AllCustomers,
+    IReadOnlyList<int>? PlantIds = null,
+    IReadOnlyList<int>? CustomerIds = null,
+    IReadOnlyList<ViewerPlantCustomerAssignmentRequest>? PlantCustomerAssignments = null);
+public sealed record ViewerPlantCustomerAssignmentRequest(int PlantId, int CustomerId);
 
 public sealed record ForgotPasswordRequest(string Email);
 

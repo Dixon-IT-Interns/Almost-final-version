@@ -216,10 +216,10 @@ export default function ViewerDashboard({ session, onSignOut }) {
               <tr>
                 <th>Line No.</th><th>SAP Location</th><th>Customer</th><th>Process</th><th>Model</th><th>Status</th>
                 <th>Month Plan</th><th>Month Actual</th><th>Production Plan</th><th>Production Actual</th>
-                <th>UPH Target</th><th>UPH Actual</th><th>UPPH Installed</th><th>UPPH Actual</th>
+                <th>UPH Target</th><th>UPH Actual</th><th>UPPH Installed</th><th>UPPH / CPH Actual</th>
                 <th>FPY Target</th><th>FPY Actual</th><th>FTY Target</th><th>FTY Actual</th><th>RTY Target</th><th>RTY Actual</th>
-                <th>OS&amp;D Reporting Date Value</th><th>OS&amp;D Reporting Date %</th><th>OS&amp;D MTD Value</th><th>OS&amp;D MTD %</th>
-                <th>Actual OT</th><th>Planned OT</th><th>Unplanned OT</th><th>Open WO Qty</th><th>&gt;7 Days WO</th>
+                <th>OS&amp;D Reporting Date Value</th><th>OS&amp;D Reporting Date %</th><th>OS&amp;D MTD Value</th><th>OS&amp;D MTD %</th><th>OS&amp;D Target</th>
+                <th>Actual OT</th><th>Planned OT</th><th>Unplanned OT</th><th>OT Target</th><th>Open WO Qty</th><th>&gt;7 Days WO</th><th>WIP &gt;3 Days</th><th>WIP &gt;7 Days</th>
                 <th>Daily TRC In</th><th>Daily TRC Out</th><th>TRC Overall Failure %</th><th>TRC Lying &gt;3 Days</th><th>Issue Description</th>
               </tr>
             </thead>
@@ -227,13 +227,13 @@ export default function ViewerDashboard({ session, onSignOut }) {
               <td><strong>{line.lineName}</strong></td><td>{line.sapLocation || "—"}</td><td>{line.customerName}</td>
               <td><span className={`process ${String(line.process || "").toLowerCase()}`}>{line.process || "—"}</span></td><td>{line.modelName || "—"}</td>
               <td><span className={`status ${String(line.status || "unknown").toLowerCase().replaceAll("_", "-")}`}>{String(line.status || "UNKNOWN").replaceAll("_", " ")}</span></td>
-              <td>{metric(line.monthPlan)}</td><td>{metric(line.monthActual)}</td><td>{metric(line.productionPlan)}</td><td>{metric(line.productionActual)}</td>
-              <td>{metric(line.uphTarget)}</td><td>{metric(line.uphActual)}</td><td>{metric(line.upphInstalled)}</td><td>{metric(line.upphActual)}</td>
-              <td>{metric(line.fpyTarget, true)}</td><td>{metric(line.fpyActual, true)}</td><td>{metric(line.ftyTarget, true)}</td><td>{metric(line.ftyActual, true)}</td><td>{metric(line.rtyTarget, true)}</td><td>{metric(line.rtyActual, true)}</td>
-              <td>{metric(line.osdReportingDateValue)}</td><td>{metric(line.osdReportingDatePercent, true)}</td><td>{metric(line.osdMtdValue)}</td><td>{metric(line.osdMtdPercent, true)}</td>
-              <td>{metric(line.actualOTManhours)}</td><td>{metric(line.plannedOTManhours)}</td><td>{metric(line.unplannedOTManhours)}</td>
-              <td>{metric(line.openWOQty)}</td><td>{metric(line.over7DaysWOBalanceQty)}</td><td>{metric(line.dailyTRCInQty)}</td><td>{metric(line.dailyTRCOutQty)}</td>
-              <td>{metric(line.trcOverallFailureInflowPercent, true)}</td><td>{metric(line.trcLyingOver3DaysCr)}</td>
+              <td>{metric(line.monthPlan, false, line.textValues?.monthPlan)}</td><td>{metric(line.monthActual, false, line.textValues?.monthActual)}</td><td>{metric(line.productionPlan, false, line.textValues?.productionPlan)}</td><td>{metric(line.productionActual, false, line.textValues?.productionActual)}</td>
+              <td>{metric(line.uphTarget, false, line.textValues?.uphTarget)}</td><td>{metric(line.uphActual, false, line.textValues?.uphActual)}</td><td>{metric(line.upphInstalled, false, line.textValues?.upphInstalled)}</td><td>{line.process === "SMT" ? metric(line.cphActual, false, line.textValues?.cphActual) : metric(line.upphActual, false, line.textValues?.upphActual)}</td>
+              <td>{metric(line.fpyTarget, true, line.textValues?.fpyTarget)}</td><td>{metric(line.fpyActual, true, line.textValues?.fpyActual)}</td><td>{metric(line.ftyTarget, true, line.textValues?.ftyTarget)}</td><td>{metric(line.ftyActual, true, line.textValues?.ftyActual)}</td><td>{metric(line.rtyTarget, true, line.textValues?.rtyTarget)}</td><td>{metric(line.rtyActual, true, line.textValues?.rtyActual)}</td>
+              <td>{metric(line.osdReportingDateValue, false, line.textValues?.osdReportingDateValue)}</td><td>{metric(line.osdReportingDatePercent, true, line.textValues?.osdReportingDatePercent)}</td><td>{metric(line.osdMtdValue, false, line.textValues?.osdMtdValue)}</td><td>{metric(line.osdMtdPercent, true, line.textValues?.osdMtdPercent)}</td><td>{metric(line.osdTarget, false, line.textValues?.osdTarget)}</td>
+              <td>{metric(line.actualOTManhours, false, line.textValues?.actualOTManhours)}</td><td>{metric(line.plannedOTManhours, false, line.textValues?.plannedOTManhours)}</td><td>{metric(line.unplannedOTManhours, false, line.textValues?.unplannedOTManhours)}</td><td>{metric(line.otTarget, false, line.textValues?.otTarget)}</td>
+              <td>{metric(line.openWOQty, false, line.textValues?.openWOQty)}</td><td>{metric(line.over7DaysWOBalanceQty, false, line.textValues?.over7DaysWOBalanceQty)}</td><td>{metric(line.wipLyingGreater3Days, false, line.textValues?.wipLyingGreater3Days)}</td><td>{metric(line.wipLyingGreater7Days, false, line.textValues?.wipLyingGreater7Days)}</td><td>{metric(line.dailyTRCInQty, false, line.textValues?.dailyTRCInQty)}</td><td>{metric(line.dailyTRCOutQty, false, line.textValues?.dailyTRCOutQty)}</td>
+              <td>{metric(line.trcOverallFailureInflowPercent, true, line.textValues?.trcOverallFailureInflowPercent)}</td><td>{metric(line.trcLyingOver3DaysCr, false, line.textValues?.trcLyingOver3DaysCr)}</td>
               <td className="issue-cell" title={line.issueDescription || ""}>{line.issueDescription || "—"}</td>
             </tr>)}</tbody>
           </table>
@@ -279,8 +279,9 @@ function TrendChart({ data, maxValue, days }) {
 
 function Card({ label, value, sub }) { return <div className="viewer-card"><span>{label}</span><strong>{value}</strong>{sub && <small>{sub}</small>}</div>; }
 function fmt(v) { return Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 }); }
-function metric(value, isPercent = false) {
-  if (value === null || value === undefined || value === "") return "—";
+function metric(value, isPercent = false, textValue = null) {
+  if (value === null || value === undefined || value === "")
+    return textValue || "—";
   const formatted = Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 });
   return isPercent ? `${formatted}%` : formatted;
 }

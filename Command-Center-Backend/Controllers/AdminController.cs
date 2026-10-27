@@ -16,6 +16,7 @@ namespace Dixon.CommandCenter.API.Controllers;
 [Route("api/admin")]
 public sealed class AdminController(
     UserRepository users,
+    ViewerAccessRepository viewerAccess,
     InvitationRepository invitations,
     InvitationEmailService invitationEmail) : ControllerBase
 {
@@ -24,10 +25,17 @@ public sealed class AdminController(
     public async Task<IActionResult> GetUsers(
         CancellationToken cancellationToken)
     {
-        return Ok(await users.GetUsersAsync(
+        var records = await users.GetUsersAsync(
             IsSuperAdmin ? null : CurrentPlantId,
             IsSuperAdmin,
-            cancellationToken));
+            cancellationToken);
+        var summaries = await viewerAccess.GetSummariesAsync(
+            IsSuperAdmin ? null : CurrentPlantId,
+            IsSuperAdmin,
+            cancellationToken);
+        return Ok(records.Select(user => user.RoleName == "Viewer"
+            ? user with { ViewerAccess = summaries.GetValueOrDefault(user.UserId) }
+            : user));
     }
 
     [HttpGet("users/{id:int}")]
@@ -43,7 +51,21 @@ public sealed class AdminController(
             IsSuperAdmin,
             cancellationToken);
 
-        return user is null ? NotFound() : Ok(user);
+        if (user is null)
+        {
+            return NotFound();
+        }
+
+        if (user.RoleName == "Viewer")
+        {
+            var summaries = await viewerAccess.GetSummariesAsync(
+                IsSuperAdmin ? null : CurrentPlantId,
+                IsSuperAdmin,
+                cancellationToken);
+            user = user with { ViewerAccess = summaries.GetValueOrDefault(user.UserId) };
+        }
+
+        return Ok(user);
     }
 
     [HttpGet("roles")]
