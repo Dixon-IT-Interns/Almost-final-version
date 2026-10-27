@@ -1,5 +1,6 @@
 using System.Data;
 using System.Security.Claims;
+using System.Text.Json;
 using Dixon.CommandCenter.API.Data;
 using Dixon.CommandCenter.API.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -1080,7 +1081,8 @@ public sealed class DailyReportsController(
                 dr.OSDTarget,
                 dr.OTTarget,
                 dr.SubmissionBatchId,
-                dr.SubmissionBatchEnforced
+                dr.SubmissionBatchEnforced,
+                dr.TextValuesJson
 
             FROM DailyReport dr
 
@@ -1225,7 +1227,8 @@ public sealed class DailyReportsController(
                 osdTarget = GetDecimal(reader, 37),
                 otTarget = GetDecimal(reader, 38),
                 submissionBatchId = reader.IsDBNull(39) ? (Guid?)null : reader.GetGuid(39),
-                submissionBatchEnforced = reader.GetBoolean(40)
+                submissionBatchEnforced = reader.GetBoolean(40),
+                textValues = ParseTextValues(reader.IsDBNull(41) ? null : reader.GetString(41))
             });
         }
 
@@ -1329,7 +1332,8 @@ public sealed class DailyReportsController(
 
                 dr.UPPHTarget,
                 dr.OSDTarget,
-                dr.OTTarget
+                dr.OTTarget,
+                dr.TextValuesJson
 
             FROM DailyReport dr
 
@@ -1459,7 +1463,8 @@ public sealed class DailyReportsController(
 
             upphTarget = GetDecimal(reader, 34),
             osdTarget = GetDecimal(reader, 35),
-            otTarget = GetDecimal(reader, 36)
+            otTarget = GetDecimal(reader, 36),
+            textValues = ParseTextValues(reader.IsDBNull(37) ? null : reader.GetString(37))
         });
     }
 
@@ -1580,6 +1585,9 @@ public sealed class DailyReportsController(
         var planEditsError = ValidateKpiPlanEdits(request.PlanEdits);
         if (planEditsError is not null)
             return BadRequest(new { message = planEditsError });
+        var textValuesError = ValidateTextValues(request.NonNumericValues);
+        if (textValuesError is not null)
+            return BadRequest(new { message = textValuesError });
 
         if (request.PlanEdits is { Count: > 0 })
         {
@@ -2283,6 +2291,9 @@ public sealed class DailyReportsController(
                 IssueDescription =
                     @IssueDescription,
 
+                TextValuesJson =
+                    @TextValuesJson,
+
                 UpdatedAt =
                     SYSUTCDATETIME()
 
@@ -2538,6 +2549,12 @@ public sealed class DailyReportsController(
             SqlDbType.Int,
             dailyReportId);
 
+        var textValuesJson = request.NonNumericValues is { Count: > 0 }
+            ? JsonSerializer.Serialize(request.NonNumericValues)
+            : null;
+        var textValuesParameter = command.Parameters.Add("@TextValuesJson", SqlDbType.NVarChar, -1);
+        textValuesParameter.Value = textValuesJson is null ? DBNull.Value : textValuesJson;
+
         await command.ExecuteNonQueryAsync(
             cancellationToken);
     }
@@ -2627,8 +2644,41 @@ public sealed class DailyReportsController(
         ["rtyTarget"]="RTYTarget",["rtyActual"]="RTYActual",["osdTarget"]="OSDTarget",["osdReportingDateValue"]="OSDReportingDateValue",["osdReportingDatePercent"]="OSDReportingDatePercent",
         ["osdMtdValue"]="OSDMTDValue",["osdMtdPercent"]="OSDMTDPercent",["otTarget"]="OTTarget",["plannedOTManhours"]="PlannedOTManhours",["unplannedOTManhours"]="UnplannedOTManhours",
         ["actualOTManhours"]="ActualOTManhours",["openWOQty"]="OpenWOQty",["over7DaysWOBalanceQty"]="Over7DaysWOBalanceQty",["dailyTRCInQty"]="DailyTRCInQty",["dailyTRCOutQty"]="DailyTRCOutQty",
+        ["wipLyingGreater3Days"]="wip_lying_greater_3_days",["wipLyingGreater7Days"]="wip_lying_greater_7_days",
         ["trcOverallFailureInflowPercent"]="TRCOverallFailureInflowPercent",["trcLyingOver3DaysCr"]="TRCLyingOver3DaysCr",["issueDescription"]="IssueDescription"
     };
+
+    private static readonly HashSet<string> NonNumericValueFields =
+        AnnotationFieldColumns.Keys
+            .Where(field => field != "issueDescription")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private static string? ValidateTextValues(
+        IReadOnlyDictionary<string, string>? values)
+    {
+        if (values is null)
+            return null;
+
+        foreach (var (field, value) in values)
+        {
+            if (!NonNumericValueFields.Contains(field)
+                || (value != "N/P" && value != "N/A"))
+                return "Non-numeric KPI values must be N/P or N/A and must target a numeric report field.";
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyDictionary<string, string> ParseTextValues(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new Dictionary<string, string>();
+
+        var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+        return parsed is null
+            ? new Dictionary<string, string>()
+            : new Dictionary<string, string>(parsed, StringComparer.OrdinalIgnoreCase);
+    }
 
     private static async Task ResolveReportAnnotationsAsync(SqlConnection connection,SqlTransaction transaction,int reportId,int userId,CancellationToken cancellationToken)
     {
@@ -2854,6 +2904,8 @@ public sealed class DailyReportRequest
     public DateTime ReportDate { get; set; }
 
     public Guid? SubmissionBatchId { get; set; }
+
+    public Dictionary<string, string>? NonNumericValues { get; set; }
 
     public int CustomerId { get; set; }
 

@@ -1,0 +1,196 @@
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\.msCoverageSourceRootsMapping_Dixon.CommandCenter.API.Tests
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\bin\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\bin\Debug\net8.0\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\bin\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.dev.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.staticwebassets.endpoints.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\Templates\DixonDailyReportTemplate.xlsx
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\Dixon.CommandCenter.API.exe
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\testhost.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\xunit.abstractions.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\testhost.exe
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\xunit.runner.visualstudio.testadapter.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterExcelImportValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.pdb
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Debug\net8.0\Dixon.CommandCenter.API.Tests.csproj.AssemblyReference.cache
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Debug\net8.0\Dixon.CommandCenter.API.Tests.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Debug\net8.0\Dixon.CommandCenter.API.Tests.AssemblyInfoInputs.cache
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Debug\net8.0\Dixon.CommandCenter.API.Tests.AssemblyInfo.cs
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Debug\net8.0\Dixon.CommandCenter.API.Tests.csproj.CoreCompileInputs.cache
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Debug\net8.0\Dixon.CommandCenter.API.Tests.sourcelink.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Debug\net8.0\Dixon.Co.80273827.Up2Date
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Debug\net8.0\Dixon.CommandCenter.API.Tests.dll
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Debug\net8.0\refint\Dixon.CommandCenter.API.Tests.dll
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Debug\net8.0\Dixon.CommandCenter.API.Tests.pdb
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Debug\net8.0\Dixon.CommandCenter.API.Tests.genruntimeconfig.cache
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Debug\net8.0\ref\Dixon.CommandCenter.API.Tests.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\.msCoverageSourceRootsMapping_Dixon.CommandCenter.API.Tests
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\bin\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\bin\Debug\net8.0\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\bin\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.dev.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.staticwebassets.endpoints.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\Templates\DixonDailyReportTemplate.xlsx
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\Dixon.CommandCenter.API.exe
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\testhost.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\xunit.abstractions.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\testhost.exe
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\xunit.runner.visualstudio.testadapter.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterApprovalValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.pdb
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\.msCoverageSourceRootsMapping_Dixon.CommandCenter.API.Tests
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\bin\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\bin\Debug\net8.0\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\bin\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.dev.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.staticwebassets.endpoints.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\Templates\DixonDailyReportTemplate.xlsx
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\Dixon.CommandCenter.API.exe
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\testhost.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\xunit.abstractions.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\testhost.exe
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\xunit.runner.visualstudio.testadapter.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNpNaValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.pdb
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\.msCoverageSourceRootsMapping_Dixon.CommandCenter.API.Tests
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\bin\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\bin\Debug\net8.0\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\bin\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.dev.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.staticwebassets.endpoints.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\Templates\DixonDailyReportTemplate.xlsx
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\Dixon.CommandCenter.API.exe
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\testhost.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\xunit.abstractions.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\testhost.exe
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\xunit.runner.visualstudio.testadapter.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterNaNpImportValidation\Debug\net8.0\Dixon.CommandCenter.API.Tests.pdb
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\.msCoverageSourceRootsMapping_Dixon.CommandCenter.API.Tests
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\bin\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\bin\Debug\net8.0\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\bin\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.dev.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.staticwebassets.endpoints.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\Templates\DixonDailyReportTemplate.xlsx
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\Dixon.CommandCenter.API.exe
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\testhost.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\xunit.abstractions.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\testhost.exe
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\xunit.runner.visualstudio.testadapter.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\Dixon.CommandCenter.API.Tests.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\Dixon.CommandCenter.API.Tests.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\Dixon.CommandCenter.API.Tests.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnostics\Debug\net8.0\Dixon.CommandCenter.API.Tests.pdb
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\.msCoverageSourceRootsMapping_Dixon.CommandCenter.API.Tests
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\bin\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\bin\Debug\net8.0\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\bin\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.dev.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.staticwebassets.endpoints.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\Templates\DixonDailyReportTemplate.xlsx
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\Dixon.CommandCenter.API.exe
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\testhost.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\xunit.abstractions.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\testhost.exe
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\xunit.runner.visualstudio.testadapter.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\Dixon.CommandCenter.API.Tests.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\Dixon.CommandCenter.API.Tests.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\Dixon.CommandCenter.API.Tests.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsTests\Debug\net8.0\Dixon.CommandCenter.API.Tests.pdb
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\.msCoverageSourceRootsMapping_Dixon.CommandCenter.API.Tests
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\bin\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\bin\Debug\net8.0\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\bin\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.dev.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.staticwebassets.endpoints.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\Templates\DixonDailyReportTemplate.xlsx
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\Dixon.CommandCenter.API.exe
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\testhost.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\xunit.abstractions.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\testhost.exe
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\xunit.runner.visualstudio.testadapter.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\Dixon.CommandCenter.API.Tests.deps.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\Dixon.CommandCenter.API.Tests.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\Dixon.CommandCenter.API.Tests.dll
+C:\Users\Administrator\AppData\Local\Temp\DixonCommandCenterImportDiagnosticsRerun\Debug\net8.0\Dixon.CommandCenter.API.Tests.pdb
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\.msCoverageSourceRootsMapping_Dixon.CommandCenter.API.Tests
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\appsettings.Development.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\appsettings.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\appsettings.Production.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\bin\Debug\net8.0\appsettings.Development.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\bin\Debug\net8.0\appsettings.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\bin\Debug\net8.0\appsettings.Production.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.dev.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\bin\Debug\net8.0\Dixon.CommandCenter.API.staticwebassets.endpoints.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\Templates\DixonDailyReportTemplate.xlsx
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\Dixon.CommandCenter.API.exe
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\testhost.dll
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\xunit.abstractions.dll
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\testhost.exe
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\xunit.runner.visualstudio.testadapter.dll
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\Dixon.CommandCenter.API.Tests.deps.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\Dixon.CommandCenter.API.Tests.runtimeconfig.json
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\Dixon.CommandCenter.API.Tests.dll
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\Dixon.CommandCenter.API.Tests.pdb

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json.Serialization;
 using System.Xml;
 using ClosedXML.Excel;
 using Dixon.CommandCenter.API.Data;
@@ -7,22 +8,9 @@ using Microsoft.Data.SqlClient;
 namespace Dixon.CommandCenter.API.Services;
 
 public sealed class DailyReportExcelImportService(
-    SqlConnectionFactory connectionFactory)
+    SqlConnectionFactory connectionFactory,
+    ILogger<DailyReportExcelImportService> logger)
 {
-    private static readonly HashSet<string> EmptyNumericValues =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "",
-            "-",
-            "–",
-            "—",
-            "−",
-            "NA",
-            "N/A",
-            "NP",
-            "NO PLAN"
-        };
-
     public async Task<DailyReportExcelImportPreview> PreviewAsync(
         Stream workbookStream,
         int plantId,
@@ -114,6 +102,12 @@ public sealed class DailyReportExcelImportService(
                 or InvalidOperationException
                 or NotSupportedException)
         {
+            logger.LogWarning(
+                exception,
+                "Could not open Excel import workbook for PlantId {PlantId}, CustomerId {CustomerId}, CategoryId {CategoryId}.",
+                plantId,
+                customerId,
+                categoryId);
             return Failure(
                 selectedReportDate,
                 "The uploaded file could not be opened as an Office Open XML workbook. Save the report in Excel as Excel Workbook (*.xlsx) and upload the saved .xlsx file; legacy .xls, renamed files, password-protected files and damaged workbooks are not supported.");
@@ -129,10 +123,18 @@ public sealed class DailyReportExcelImportService(
                 .ToArray();
 
             if (string.Equals(uploadType, "ie", StringComparison.OrdinalIgnoreCase))
-                return PreviewSimpleKpi(workbook.Worksheets.ToArray(), "ie", selectedReportDate, customerName, catalog);
+            {
+                var preview = PreviewSimpleKpi(workbook.Worksheets.ToArray(), "ie", selectedReportDate, customerName, catalog);
+                LogPreviewWarnings(preview, plantId, customerId, categoryId, categoryName, uploadType);
+                return preview;
+            }
 
             if (string.Equals(uploadType, "quality", StringComparison.OrdinalIgnoreCase))
-                return PreviewSimpleKpi(workbook.Worksheets.ToArray(), "quality", selectedReportDate, customerName, catalog);
+            {
+                var preview = PreviewSimpleKpi(workbook.Worksheets.ToArray(), "quality", selectedReportDate, customerName, catalog);
+                LogPreviewWarnings(preview, plantId, customerId, categoryId, categoryName, uploadType);
+                return preview;
+            }
 
             if (string.Equals(uploadType, "woClosure", StringComparison.OrdinalIgnoreCase))
             {
@@ -229,12 +231,14 @@ public sealed class DailyReportExcelImportService(
 
             if (string.Equals(categoryName, "FATP", StringComparison.OrdinalIgnoreCase))
             {
-                return PreviewFATP(
+                var preview = PreviewFATP(
                     selectedSections,
                     reportDate,
                     selectedReportDate,
                     customerName,
                     catalog);
+                LogPreviewWarnings(preview, plantId, customerId, categoryId, categoryName, uploadType);
+                return preview;
             }
 
             var errors = new List<string>();
@@ -285,7 +289,7 @@ public sealed class DailyReportExcelImportService(
 
                     var sapLocation = ReadText(importSection.Worksheet, rowNumber, importSection.Columns.SapLocation);
                     var modelName = ReadText(importSection.Worksheet, rowNumber, importSection.Columns.Model);
-                    var rowLabel = $"Excel row {rowNumber} ({lineNo}, {modelName ?? "unknown model"})";
+                    var rowLabel = $"Worksheet '{importSection.Worksheet.Name}', row {rowNumber}";
 
                     if (string.IsNullOrWhiteSpace(sapLocation))
                         warnings.Add($"{rowLabel}: row skipped because SAP Location is blank.");
@@ -412,22 +416,83 @@ public sealed class DailyReportExcelImportService(
 
             if (errors.Count > 0)
             {
-                return new DailyReportExcelImportPreview(
+                var invalidPreview = new DailyReportExcelImportPreview(
                     false,
                     reportDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                     0,
                     0,
                     errors,
                     []);
+                LogPreviewWarnings(invalidPreview, plantId, customerId, categoryId, categoryName, uploadType);
+                return invalidPreview;
             }
 
-            return new DailyReportExcelImportPreview(
+            var result = new DailyReportExcelImportPreview(
                 true,
                 reportDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 imported.Select(entry => entry.LineId).Distinct().Count(),
                 imported.Count,
                 warnings,
                 imported);
+            LogPreviewWarnings(result, plantId, customerId, categoryId, categoryName, uploadType);
+            return result;
+        }
+    }
+
+    private void LogPreviewWarnings(
+        DailyReportExcelImportPreview preview,
+        int plantId,
+        int customerId,
+        int categoryId,
+        string categoryName,
+        string uploadType)
+    {
+        var invalidRows = preview.Rows?.Count(row => row.Status == "invalid") ?? 0;
+        var actionableNotes = preview.Errors
+            .Count(error => !error.StartsWith("Import summary:", StringComparison.Ordinal));
+        var rowNotes = preview.Rows?
+            .Where(row => row.Status != "matched" && !string.IsNullOrWhiteSpace(row.Reason))
+            .ToArray() ?? [];
+        if (invalidRows == 0 && actionableNotes == 0 && rowNotes.Length == 0)
+            return;
+
+        logger.LogWarning(
+            "Excel import preview for PlantId {PlantId}, CustomerId {CustomerId}, CategoryId {CategoryId}, Category {CategoryName}, UploadType {UploadType} contains {InvalidRowCount} invalid row(s), {NoteCount} preview note(s), and {RowNoteCount} row diagnostic(s).",
+            plantId,
+            customerId,
+            categoryId,
+            categoryName,
+            uploadType,
+            invalidRows,
+            actionableNotes,
+            rowNotes.Length);
+
+        foreach (var note in preview.Errors.Where(
+                     error => !error.StartsWith("Import summary:", StringComparison.Ordinal)))
+        {
+            logger.LogWarning(
+                "Excel import preview validation note for PlantId {PlantId}, CustomerId {CustomerId}, CategoryId {CategoryId}, Category {CategoryName}, UploadType {UploadType}: {ValidationNote}",
+                plantId,
+                customerId,
+                categoryId,
+                categoryName,
+                uploadType,
+                note);
+        }
+
+        foreach (var row in rowNotes)
+        {
+            logger.LogWarning(
+                "Excel import preview row diagnostic for PlantId {PlantId}, CustomerId {CustomerId}, CategoryId {CategoryId}, Category {CategoryName}, UploadType {UploadType}, Worksheet {Worksheet}, Row {RowNumber}, Status {RowStatus}: {Reason}",
+                plantId,
+                customerId,
+                categoryId,
+                categoryName,
+                uploadType,
+                row.WorksheetName,
+                row.RowNumber,
+                row.Status,
+                row.Reason);
         }
     }
 
@@ -680,12 +745,17 @@ public sealed class DailyReportExcelImportService(
                     rowCustomer,
                     modelName,
                     status,
-                    reasonParts.Count == 0 ? null : string.Join(" ", reasonParts),
+                    reasonParts.Count == 0
+                        ? null
+                        : $"Worksheet '{section.Worksheet.Name}', row {rowNumber}: {string.Join(" ", reasonParts)}",
                     lineId,
                     mappedLineName,
                     modelId,
                     mappedModelName,
-                    values));
+                    values)
+                {
+                    WorksheetName = section.Worksheet.Name
+                });
             }
         }
 
@@ -719,6 +789,8 @@ public sealed class DailyReportExcelImportService(
             return Failure(workbookDate, "The workbook report date is in the future and cannot be applied.");
 
         var matched = rows.Where(row => row.Status == "matched").ToArray();
+        errors.Add(
+            $"Import summary: {rows.Count} row(s) processed, {matched.Length} matched for import, {rows.Count - matched.Length} skipped or rejected.");
         return new DailyReportExcelImportPreview(
             true,
             workbookDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -792,6 +864,32 @@ public sealed class DailyReportExcelImportService(
             if (!isQuality && cphColumn > 0 && cphActual == 0)
                 cphActual = cphColumn + 1;
 
+            var requiredValueColumns = isQuality
+                ? new[]
+                {
+                    ("FPY Target (%)", fpyTarget),
+                    ("FPY Actual (%)", fpyActual),
+                    ("FTY Target (%)", ftyTarget),
+                    ("FTY Actual (%)", ftyActual),
+                    ("RTY Target (%)", rtyTarget),
+                    ("RTY Actual (%)", rtyActual)
+                }
+                : new[]
+                {
+                    ("CPH Target", cphTarget),
+                    ("CPH Actual", cphActual)
+                };
+            var missingColumns = requiredValueColumns
+                .Where(column => column.Item2 <= 0)
+                .Select(column => column.Item1)
+                .ToArray();
+            if (missingColumns.Length > 0)
+            {
+                errors.Add(
+                    $"Worksheet '{worksheet.Name}' is missing required columns: {string.Join(", ", missingColumns)}.");
+                continue;
+            }
+
             for (var rowNumber = subHeaderRow + (isQuality ? 0 : 1); rowNumber <= lastRow; rowNumber++)
             {
                 var sap = ReadSourceText(worksheet, rowNumber, sapColumn);
@@ -826,16 +924,18 @@ public sealed class DailyReportExcelImportService(
                 else if (modelMatches.Length > 1)
                     reason.Add($"Model '{modelName}' matches more than one active model.");
 
+                var valueErrors = new List<string>();
+                var nonNumericValues = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 var values = new DailyReportExcelImportValues(
                     null, null, null, null, null, null, null, null,
-                    isQuality ? null : ReadSimpleNumber(worksheet, rowNumber, cphTarget),
-                    isQuality ? null : ReadSimpleNumber(worksheet, rowNumber, cphActual),
-                    isQuality ? ReadSimpleNumber(worksheet, rowNumber, fpyTarget) : null,
-                    isQuality ? ReadSimpleNumber(worksheet, rowNumber, fpyActual) : null,
-                    isQuality ? ReadSimpleNumber(worksheet, rowNumber, ftyTarget) : null,
-                    isQuality ? ReadSimpleNumber(worksheet, rowNumber, ftyActual) : null,
-                    isQuality ? ReadSimpleNumber(worksheet, rowNumber, rtyTarget) : null,
-                    isQuality ? ReadSimpleNumber(worksheet, rowNumber, rtyActual) : null,
+                    isQuality ? null : ReadSimpleNumber(worksheet, rowNumber, cphTarget, "CPH Target", "cphTarget", valueErrors, nonNumericValues),
+                    isQuality ? null : ReadSimpleNumber(worksheet, rowNumber, cphActual, "CPH Actual", "cphActual", valueErrors, nonNumericValues),
+                    isQuality ? ReadSimpleNumber(worksheet, rowNumber, fpyTarget, "FPY Target", "fpyTarget", valueErrors, nonNumericValues) : null,
+                    isQuality ? ReadSimpleNumber(worksheet, rowNumber, fpyActual, "FPY Actual", "fpyActual", valueErrors, nonNumericValues) : null,
+                    isQuality ? ReadSimpleNumber(worksheet, rowNumber, ftyTarget, "FTY Target", "ftyTarget", valueErrors, nonNumericValues) : null,
+                    isQuality ? ReadSimpleNumber(worksheet, rowNumber, ftyActual, "FTY Actual", "ftyActual", valueErrors, nonNumericValues) : null,
+                    isQuality ? ReadSimpleNumber(worksheet, rowNumber, rtyTarget, "RTY Target", "rtyTarget", valueErrors, nonNumericValues) : null,
+                    isQuality ? ReadSimpleNumber(worksheet, rowNumber, rtyActual, "RTY Actual", "rtyActual", valueErrors, nonNumericValues) : null,
                     null, null, null, null,
                     null, null, null,
                     null, null, null, null,
@@ -843,24 +943,35 @@ public sealed class DailyReportExcelImportService(
                     null, null, null,
                     isQuality
                         ? ["fpyTarget", "fpyActual", "ftyTarget", "ftyActual", "rtyTarget", "rtyActual"]
-                        : ["cphTarget", "cphActual"]);
+                        : ["cphTarget", "cphActual"],
+                    nonNumericValues);
 
-                var matched = reason.Count == 0;
+                var matched = reason.Count == 0 && valueErrors.Count == 0;
                 rows.Add(new DailyReportExcelImportRow(
                     rowNumber, lineNo, sap, excelCustomer, modelName,
-                    matched ? "matched" : "unmatched",
-                    matched ? null : string.Join(" ", reason),
+                    valueErrors.Count > 0 ? "invalid" : matched ? "matched" : "unmatched",
+                    reason.Count == 0 && valueErrors.Count == 0
+                        ? null
+                    : $"Worksheet '{worksheet.Name}', row {rowNumber}: {string.Join(" ", reason.Concat(valueErrors))}",
                     matched ? lineMatches[0].Id : null,
                     matched ? lineMatches[0].LineName : null,
                     matched ? modelMatches[0].Id : null,
                     matched ? modelMatches[0].Name : null,
-                    values));
+                values)
+                {
+                    WorksheetName = worksheet.Name
+                });
             }
         }
 
         var matchedRows = rows.Where(row => row.Status == "matched").ToArray();
         if (matchedRows.Length == 0)
             errors.Add($"No {uploadType} rows matched selected brand '{customerName}'.");
+        var invalidCount = rows.Count(row => row.Status == "invalid");
+        if (invalidCount > 0)
+            errors.Add($"{invalidCount} row(s) contain invalid numeric values and were excluded.");
+        errors.Add(
+            $"Import summary: {rows.Count} row(s) processed, {matchedRows.Length} matched for import, {rows.Count - matchedRows.Length} skipped or rejected.");
 
         return new DailyReportExcelImportPreview(
             true,
@@ -874,11 +985,30 @@ public sealed class DailyReportExcelImportService(
             rows);
     }
 
-    private static decimal? ReadSimpleNumber(IXLWorksheet worksheet, int row, int column)
+    private static decimal? ReadSimpleNumber(
+        IXLWorksheet worksheet,
+        int row,
+        int column,
+        string field,
+        string fieldKey,
+        List<string> errors,
+        IDictionary<string, string> nonNumericValues)
     {
-        return column > 0 && TryReadNumber(worksheet.Cell(row, column), out var value)
-            ? value
-            : null;
+        if (column <= 0)
+            return null;
+        if (ExcelImportCellReader.TryReadNumberOrStatus(
+                worksheet.Cell(row, column),
+                out var value,
+                out var nonNumericValue))
+        {
+            if (nonNumericValue is not null)
+                nonNumericValues[fieldKey] = nonNumericValue;
+            return value;
+        }
+
+        errors.Add(
+            $"Worksheet '{worksheet.Name}', row {row}, column {worksheet.Column(column).ColumnLetter()} ('{field}') contains an invalid number.");
+        return null;
     }
 
     private static DailyReportExcelImportValues? ReadFATPValues(
@@ -888,33 +1018,34 @@ public sealed class DailyReportExcelImportService(
     {
         var columns = section.Columns;
         var decimals = new Dictionary<string, decimal?>();
-        var decimalFields = new (string Name, int Column)[]
+        var nonNumericValues = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var decimalFields = new (string Name, string Field, int Column)[]
         {
-            ("Month Plan", columns.MonthPlan),
-            ("Month Actual", columns.MonthActual),
-            ("Production Plan", columns.ProductionPlan),
-            ("Production Actual", columns.ProductionActual),
-            ("UPH Target", columns.UphTarget),
-            ("UPH Actual", columns.UphActual),
-            ("UPPH Installed", columns.CapacityTarget),
-            ("UPPH Actual", columns.CapacityActual),
-            ("FPY Target", columns.FpyTarget),
-            ("FPY Actual", columns.FpyActual),
-            ("FTY Target", columns.FtyTarget),
-            ("FTY Actual", columns.FtyActual),
-            ("RTY Target", columns.RtyTarget),
-            ("RTY Actual", columns.RtyActual),
-            ("OS&D reporting-date value", columns.OsdReportingDateValue),
-            ("OS&D reporting-date percent", columns.OsdReportingDatePercent),
-            ("OS&D MTD value", columns.OsdMtdValue),
-            ("OS&D MTD percent", columns.OsdMtdPercent),
-            ("Planned OT", columns.PlannedOt),
-            ("Unplanned OT", columns.UnplannedOt),
-            ("TRC Overall Failure Inflow %", columns.TrcOverallFailureInflowPercent),
-            ("TRC Lying >3 Days (Cr)", columns.TrcLyingOver3DaysCr)
+            ("Month Plan", "monthPlan", columns.MonthPlan),
+            ("Month Actual", "monthActual", columns.MonthActual),
+            ("Production Plan", "productionPlan", columns.ProductionPlan),
+            ("Production Actual", "productionActual", columns.ProductionActual),
+            ("UPH Target", "uphTarget", columns.UphTarget),
+            ("UPH Actual", "uphActual", columns.UphActual),
+            ("UPPH Installed", "upphInstalled", columns.CapacityTarget),
+            ("UPPH Actual", "upphActual", columns.CapacityActual),
+            ("FPY Target", "fpyTarget", columns.FpyTarget),
+            ("FPY Actual", "fpyActual", columns.FpyActual),
+            ("FTY Target", "ftyTarget", columns.FtyTarget),
+            ("FTY Actual", "ftyActual", columns.FtyActual),
+            ("RTY Target", "rtyTarget", columns.RtyTarget),
+            ("RTY Actual", "rtyActual", columns.RtyActual),
+            ("OS&D reporting-date value", "osdReportingDateValue", columns.OsdReportingDateValue),
+            ("OS&D reporting-date percent", "osdReportingDatePercent", columns.OsdReportingDatePercent),
+            ("OS&D MTD value", "osdMtdValue", columns.OsdMtdValue),
+            ("OS&D MTD percent", "osdMtdPercent", columns.OsdMtdPercent),
+            ("Planned OT", "plannedOTManhours", columns.PlannedOt),
+            ("Unplanned OT", "unplannedOTManhours", columns.UnplannedOt),
+            ("TRC Overall Failure Inflow %", "trcOverallFailureInflowPercent", columns.TrcOverallFailureInflowPercent),
+            ("TRC Lying >3 Days (Cr)", "trcLyingOver3DaysCr", columns.TrcLyingOver3DaysCr)
         };
 
-        foreach (var (name, column) in decimalFields)
+        foreach (var (name, field, column) in decimalFields)
         {
             if (column <= 0)
             {
@@ -922,22 +1053,34 @@ public sealed class DailyReportExcelImportService(
                 continue;
             }
 
-            if (!TryReadFATPNumber(section.Worksheet.Cell(row, column), out var value))
+            if (!ExcelImportCellReader.TryReadNumberOrStatus(
+                    section.Worksheet.Cell(row, column),
+                    out var value,
+                    out var nonNumericValue))
             {
-                errors.Add($"'{name}' is not a valid number (Excel errors are not imported).");
+                errors.Add(
+                    $"Worksheet '{section.Worksheet.Name}', row {row}, column {section.Worksheet.Column(column).ColumnLetter()} ('{name}') is not a valid number (Excel errors are not imported).");
                 decimals[name] = null;
             }
             else
+            {
                 decimals[name] = value;
+                if (nonNumericValue is not null)
+                    nonNumericValues[field] = nonNumericValue;
+            }
         }
 
         var integers = new Dictionary<string, int?>();
-        var integerFields = new (string Name, int Column)[]
+        var integerFields = new (string Name, string Field, int Column)[]
         {
-            ("Daily TRC In quantity", columns.DailyTrcInQty),
-            ("Daily TRC Out quantity", columns.DailyTrcOutQty)
+            ("Open WO quantity", "openWOQty", columns.OpenWoQty),
+            (">7 Days WO quantity", "over7DaysWOBalanceQty", columns.Over7DaysWoQty),
+            ("WIP Lying >3 Days quantity", "wipLyingGreater3Days", columns.WipLyingGreater3Days),
+            ("WIP Lying >7 Days quantity", "wipLyingGreater7Days", columns.WipLyingGreater7Days),
+            ("Daily TRC In quantity", "dailyTRCInQty", columns.DailyTrcInQty),
+            ("Daily TRC Out quantity", "dailyTRCOutQty", columns.DailyTrcOutQty)
         };
-        foreach (var (name, column) in integerFields)
+        foreach (var (name, field, column) in integerFields)
         {
             if (column <= 0)
             {
@@ -945,18 +1088,25 @@ public sealed class DailyReportExcelImportService(
                 continue;
             }
 
-            if (!TryReadFATPNumber(section.Worksheet.Cell(row, column), out var value)
-                || value.HasValue
+            if (!ExcelImportCellReader.TryReadNumberOrStatus(
+                    section.Worksheet.Cell(row, column),
+                    out var value,
+                    out var nonNumericValue)
+                || nonNumericValue is null
+                && value.HasValue
                 && (decimal.Truncate(value.Value) != value.Value
                     || value.Value < int.MinValue
                     || value.Value > int.MaxValue))
             {
-                errors.Add($"'{name}' is not a valid whole number (Excel errors are not imported).");
+                errors.Add(
+                    $"Worksheet '{section.Worksheet.Name}', row {row}, column {section.Worksheet.Column(column).ColumnLetter()} ('{name}') is not a valid whole number (Excel errors are not imported).");
                 integers[name] = null;
             }
             else
             {
                 integers[name] = value.HasValue ? decimal.ToInt32(value.Value) : null;
+                if (nonNumericValue is not null)
+                    nonNumericValues[field] = nonNumericValue;
             }
         }
 
@@ -1000,7 +1150,8 @@ public sealed class DailyReportExcelImportService(
             Get("TRC Overall Failure Inflow %"),
             Get("TRC Lying >3 Days (Cr)"),
             ReadText(section.Worksheet, row, columns.IssueDescription),
-            GetPresentFields(columns, section.Metric));
+            GetPresentFields(columns, section.Metric),
+            nonNumericValues);
     }
 
     private static IReadOnlyList<DailySection> FindSections(IXLWorksheet worksheet)
@@ -1132,6 +1283,7 @@ public sealed class DailyReportExcelImportService(
     {
         var columns = section.Columns;
         var values = new Dictionary<string, decimal?>();
+        var nonNumericValues = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var skippedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var decimalColumns = new (string Name, string Field, int Column)[]
         {
@@ -1168,18 +1320,28 @@ public sealed class DailyReportExcelImportService(
             if (column <= 0)
                 continue;
 
-            if (!TryReadNumber(section.Worksheet.Cell(row, column), out var value))
+            if (!ExcelImportCellReader.TryReadNumberOrStatus(
+                    section.Worksheet.Cell(row, column),
+                    out var value,
+                    out var nonNumericValue))
             {
                 skippedFields.Add(field);
-                warnings.Add($"{rowLabel}: '{name}' was skipped because it does not contain a valid number.");
+                warnings.Add(
+                    $"{rowLabel}, column {section.Worksheet.Column(column).ColumnLetter()} ('{name}') was skipped because it does not contain a valid number.");
                 continue;
             }
 
             values[name] = value;
+            if (nonNumericValue is not null)
+                nonNumericValues[field] = nonNumericValue;
         }
 
         var integerColumns = new (string Name, string Field, int Column)[]
         {
+            ("Open WO (Qty)", "openWOQty", columns.OpenWoQty),
+            (">7 Days WO (Qty)", "over7DaysWOBalanceQty", columns.Over7DaysWoQty),
+            ("WIP Lying >3 Days (Qty)", "wipLyingGreater3Days", columns.WipLyingGreater3Days),
+            ("WIP Lying >7 Days (Qty)", "wipLyingGreater7Days", columns.WipLyingGreater7Days),
             ("Daily TRC In (Qty)", "dailyTRCInQty", columns.DailyTrcInQty),
             ("Daily TRC Out (Qty)", "dailyTRCOutQty", columns.DailyTrcOutQty)
         };
@@ -1190,10 +1352,21 @@ public sealed class DailyReportExcelImportService(
             if (column <= 0)
                 continue;
 
-            if (!TryReadNumber(section.Worksheet.Cell(row, column), out var value))
+            if (!ExcelImportCellReader.TryReadNumberOrStatus(
+                    section.Worksheet.Cell(row, column),
+                    out var value,
+                    out var nonNumericValue))
             {
                 skippedFields.Add(field);
-                warnings.Add($"{rowLabel}: '{name}' was skipped because it does not contain a valid whole number.");
+                warnings.Add(
+                    $"{rowLabel}, column {section.Worksheet.Column(column).ColumnLetter()} ('{name}') was skipped because it does not contain a valid whole number.");
+                continue;
+            }
+
+            if (nonNumericValue is not null)
+            {
+                nonNumericValues[field] = nonNumericValue;
+                integers[name] = null;
                 continue;
             }
 
@@ -1242,10 +1415,10 @@ public sealed class DailyReportExcelImportService(
             plannedOt,
             unplannedOt,
             actualOt,
-            null,
-            null,
-            null,
-            null,
+            GetInt("Open WO (Qty)"),
+            GetInt(">7 Days WO (Qty)"),
+            GetInt("WIP Lying >3 Days (Qty)"),
+            GetInt("WIP Lying >7 Days (Qty)"),
             GetInt("Daily TRC In (Qty)"),
             GetInt("Daily TRC Out (Qty)"),
             Get("TRC Overall Failure Inflow %"),
@@ -1256,47 +1429,8 @@ public sealed class DailyReportExcelImportService(
                 .Where(field => field != "actualOTManhours"
                     || values.ContainsKey("Planned OT")
                     || values.ContainsKey("Unplanned OT"))
-                .ToArray());
-    }
-
-    private static bool TryReadNumber(IXLCell cell, out decimal? value)
-    {
-        value = null;
-        if (cell.IsEmpty())
-            return true;
-
-        if (cell.TryGetValue<decimal>(out var number))
-        {
-            value = number;
-            return true;
-        }
-
-        var text = cell.GetString().Trim();
-        if (EmptyNumericValues.Contains(text))
-            return true;
-
-        if (!decimal.TryParse(
-                text,
-                NumberStyles.Number | NumberStyles.AllowExponent,
-                CultureInfo.InvariantCulture,
-                out number))
-        {
-            return false;
-        }
-
-        value = number;
-        return true;
-    }
-
-    private static bool TryReadFATPNumber(IXLCell cell, out decimal? value)
-    {
-        if (string.Equals(cell.GetString().Trim(), "No Plan", StringComparison.OrdinalIgnoreCase))
-        {
-            value = null;
-            return true;
-        }
-
-        return TryReadNumber(cell, out value);
+                .ToArray(),
+            nonNumericValues);
     }
 
     private static DateTime? ReadReportDate(IXLWorksheet worksheet)
@@ -1472,8 +1606,10 @@ public sealed class DailyReportExcelImportService(
     {
         var target = section.Columns.CapacityTarget;
         var actual = section.Columns.CapacityActual;
-        return (target > 0 && !section.Worksheet.Cell(row, target).IsEmpty())
-            || (actual > 0 && !section.Worksheet.Cell(row, actual).IsEmpty());
+        return (target > 0
+                && !ExcelImportCellReader.ResolveMergedCell(section.Worksheet.Cell(row, target)).IsEmpty())
+            || (actual > 0
+                && !ExcelImportCellReader.ResolveMergedCell(section.Worksheet.Cell(row, actual)).IsEmpty());
     }
 
     private static bool HasNumericValue(
@@ -1484,16 +1620,21 @@ public sealed class DailyReportExcelImportService(
         if (column <= 0)
             return false;
 
-        return TryReadNumber(worksheet.Cell(row, column), out var value)
-            && value.HasValue;
+        return ExcelImportCellReader.TryReadNumberOrStatus(
+                worksheet.Cell(row, column),
+                out var value,
+                out var nonNumericValue)
+            && (value.HasValue || nonNumericValue is not null);
     }
 
     private static bool HasOtherCapacityValue(DailySection section, int row)
     {
         return (section.OtherCapacityTarget > 0
-                && !section.Worksheet.Cell(row, section.OtherCapacityTarget).IsEmpty())
+                && !ExcelImportCellReader.ResolveMergedCell(
+                    section.Worksheet.Cell(row, section.OtherCapacityTarget)).IsEmpty())
             || (section.OtherCapacityActual > 0
-                && !section.Worksheet.Cell(row, section.OtherCapacityActual).IsEmpty());
+                && !ExcelImportCellReader.ResolveMergedCell(
+                    section.Worksheet.Cell(row, section.OtherCapacityActual)).IsEmpty());
     }
 
     private static IReadOnlyList<string> GetPresentFields(
@@ -1625,7 +1766,11 @@ public sealed record DailyReportExcelImportRow(
     string? MappedLineName,
     int? ModelId,
     string? MappedModelName,
-    DailyReportExcelImportValues? Form);
+    DailyReportExcelImportValues? Form)
+{
+    [JsonIgnore]
+    public string? WorksheetName { get; init; }
+}
 
 public sealed record DailyReportExcelImportEntry(
     int LineId,
@@ -1668,4 +1813,5 @@ public sealed record DailyReportExcelImportValues(
     decimal? TRCOverallFailureInflowPercent,
     decimal? TRCLyingOver3DaysCr,
     string? IssueDescription,
-    IReadOnlyList<string> PresentFields);
+    IReadOnlyList<string> PresentFields,
+    IReadOnlyDictionary<string, string>? NonNumericValues = null);
