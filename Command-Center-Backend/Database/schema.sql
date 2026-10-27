@@ -126,6 +126,76 @@ BEGIN
     );
 END;
 GO
+
+IF OBJECT_ID(N'dbo.ViewerAccess', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.ViewerAccess
+    (
+        UserId INT NOT NULL PRIMARY KEY,
+        AllPlants BIT NOT NULL,
+        AllCustomers BIT NOT NULL,
+        ConfiguredAt DATETIME2(7) NOT NULL
+            CONSTRAINT DF_ViewerAccess_ConfiguredAt DEFAULT (SYSUTCDATETIME()),
+        ConfiguredBy INT NOT NULL,
+        CONSTRAINT FK_ViewerAccess_User FOREIGN KEY (UserId) REFERENCES dbo.[User](UserId),
+        CONSTRAINT FK_ViewerAccess_ConfiguredBy FOREIGN KEY (ConfiguredBy) REFERENCES dbo.[User](UserId)
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.ViewerAccessPlant', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.ViewerAccessPlant
+    (
+        UserId INT NOT NULL,
+        PlantId INT NOT NULL,
+        CONSTRAINT PK_ViewerAccessPlant PRIMARY KEY (UserId, PlantId),
+        CONSTRAINT FK_ViewerAccessPlant_Access FOREIGN KEY (UserId) REFERENCES dbo.ViewerAccess(UserId) ON DELETE CASCADE,
+        CONSTRAINT FK_ViewerAccessPlant_Plant FOREIGN KEY (PlantId) REFERENCES dbo.Plant(PlantId)
+    );
+
+    CREATE INDEX IX_ViewerAccessPlant_PlantId_UserId
+        ON dbo.ViewerAccessPlant(PlantId, UserId);
+END;
+GO
+
+IF OBJECT_ID(N'dbo.ViewerAccessCustomer', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.ViewerAccessCustomer
+    (
+        UserId INT NOT NULL,
+        CustomerId INT NOT NULL,
+        CONSTRAINT PK_ViewerAccessCustomer PRIMARY KEY (UserId, CustomerId),
+        CONSTRAINT FK_ViewerAccessCustomer_Access FOREIGN KEY (UserId) REFERENCES dbo.ViewerAccess(UserId) ON DELETE CASCADE,
+        CONSTRAINT FK_ViewerAccessCustomer_Customer FOREIGN KEY (CustomerId) REFERENCES dbo.Customer(CustomerId)
+    );
+
+    CREATE INDEX IX_ViewerAccessCustomer_CustomerId_UserId
+        ON dbo.ViewerAccessCustomer(CustomerId, UserId);
+END;
+GO
+
+IF OBJECT_ID(N'dbo.ViewerAccessPlantCustomer', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.ViewerAccessPlantCustomer
+    (
+        UserId INT NOT NULL,
+        PlantId INT NOT NULL,
+        CustomerId INT NOT NULL,
+        CONSTRAINT PK_ViewerAccessPlantCustomer PRIMARY KEY (UserId, PlantId, CustomerId),
+        CONSTRAINT FK_ViewerAccessPlantCustomer_PlantAccess
+            FOREIGN KEY (UserId, PlantId)
+            REFERENCES dbo.ViewerAccessPlant(UserId, PlantId)
+            ON DELETE CASCADE,
+        CONSTRAINT FK_ViewerAccessPlantCustomer_Customer
+            FOREIGN KEY (CustomerId) REFERENCES dbo.Customer(CustomerId)
+    );
+
+    CREATE INDEX IX_ViewerAccessPlantCustomer_Plant_Customer_User
+        ON dbo.ViewerAccessPlantCustomer(PlantId, CustomerId, UserId);
+END;
+GO
+
 /* Approval queue: submitted reports wait here until an assigned Approver reviews them. */
 IF OBJECT_ID(N'dbo.ApprovalQueue', N'U') IS NULL
 BEGIN

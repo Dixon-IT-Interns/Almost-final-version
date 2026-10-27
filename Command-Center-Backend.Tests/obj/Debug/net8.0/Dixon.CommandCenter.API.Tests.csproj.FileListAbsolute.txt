@@ -194,3 +194,33 @@ C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-
 C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\Dixon.CommandCenter.API.Tests.runtimeconfig.json
 C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\Dixon.CommandCenter.API.Tests.dll
 C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\.validation-outputDebug\net8.0\Dixon.CommandCenter.API.Tests.pdb
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\Templates\DixonDailyReportTemplate.xlsx
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\Dixon.CommandCenter.API.exe
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\testhost.dll
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\xunit.abstractions.dll
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\testhost.exe
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\xunit.runner.visualstudio.testadapter.dll
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\Dixon.CommandCenter.API.Tests.deps.json
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\Dixon.CommandCenter.API.Tests.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\Dixon.CommandCenter.API.Tests.dll
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests\Dixon.CommandCenter.API.Tests.pdb
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\Dixon.CommandCenter.API.deps.json
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\Dixon.CommandCenter.API.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\appsettings.Development.json
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\appsettings.json
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\appsettings.Production.json
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\Templates\DixonDailyReportTemplate.xlsx
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\Dixon.CommandCenter.API.exe
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\testhost.dll
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\xunit.abstractions.dll
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\testhost.exe
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\xunit.runner.visualstudio.testadapter.dll
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\Dixon.CommandCenter.API.Tests.deps.json
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\Dixon.CommandCenter.API.Tests.runtimeconfig.json
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\Dixon.CommandCenter.API.Tests.dll
+C:\Users\Administrator\AppData\Local\Temp\CCviewer-tests-final\Dixon.CommandCenter.API.Tests.pdb

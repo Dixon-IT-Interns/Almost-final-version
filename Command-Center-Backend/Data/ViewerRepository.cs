@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text.Json;
 using Dixon.CommandCenter.API.Models;
 using Microsoft.Data.SqlClient;
 
@@ -9,7 +10,7 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
     private const string AccessibleLines = """
         WITH AccessibleLines AS
         (
-            SELECT
+            SELECT DISTINCT
                 c.CustomerId,
                 c.CustomerName,
                 cat.CategoryId,
@@ -17,8 +18,12 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
                 pl.LineId,
                 pl.LineName,
                 pl.SAPLocation
-            FROM PlantCustomer pc
+            FROM ViewerAccess va
+            INNER JOIN [User] u ON u.UserId = va.UserId AND u.IsActive = 1
+            INNER JOIN Role r ON r.RoleId = u.RoleId AND r.RoleName = 'Viewer'
+            INNER JOIN PlantCustomer pc ON pc.PlantId = @PlantId
             INNER JOIN Customer c ON c.CustomerId = pc.CustomerId
+            INNER JOIN Plant p ON p.PlantId = pc.PlantId
             INNER JOIN Category cat
                 ON cat.CustomerId = c.CustomerId
                AND cat.PlantId = pc.PlantId
@@ -27,25 +32,45 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
                 ON pl.CategoryId = cat.CategoryId
                AND pl.PlantId = pc.PlantId
                AND pl.IsActive = 1
-            INNER JOIN Plant p ON p.PlantId = pc.PlantId
-            WHERE pc.PlantId = @PlantId
+            WHERE va.UserId = @ViewerId
               AND c.IsActive = 1
               AND p.IsActive = 1
+              AND (va.AllPlants = 1 OR EXISTS
+                   (SELECT 1 FROM ViewerAccessPlant vap
+                    WHERE vap.UserId = va.UserId AND vap.PlantId = pc.PlantId))
+              AND (va.AllCustomers = 1
+                   OR (va.AllPlants = 1 AND EXISTS
+                       (SELECT 1 FROM ViewerAccessCustomer vac
+                        WHERE vac.UserId = va.UserId AND vac.CustomerId = pc.CustomerId))
+                   OR (va.AllPlants = 0 AND EXISTS
+                       (SELECT 1 FROM ViewerAccessPlantCustomer vapc
+                        WHERE vapc.UserId = va.UserId
+                          AND vapc.PlantId = pc.PlantId
+                          AND vapc.CustomerId = pc.CustomerId)))
               AND (@CustomerId IS NULL OR c.CustomerId = @CustomerId)
               AND (@Process = 'ALL' OR cat.CategoryName = @Process)
         )
         """;
 
-    public async Task<IReadOnlyList<PlantResponse>> GetPlantsAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<PlantResponse>> GetPlantsAsync(
+        int viewerId,
+        CancellationToken cancellationToken)
     {
         var plants = new List<PlantResponse>();
         await using var connection = await connectionFactory.OpenAsync(cancellationToken);
         await using var command = new SqlCommand("""
-            SELECT PlantId, PlantName, Location
-            FROM Plant
-            WHERE IsActive = 1
-            ORDER BY PlantName;
+            SELECT p.PlantId, p.PlantName, p.Location
+            FROM Plant p
+            INNER JOIN ViewerAccess va ON va.UserId = @ViewerId
+            INNER JOIN [User] u ON u.UserId = va.UserId AND u.IsActive = 1
+            INNER JOIN Role r ON r.RoleId = u.RoleId AND r.RoleName = 'Viewer'
+            WHERE p.IsActive = 1
+              AND (va.AllPlants = 1 OR EXISTS
+                   (SELECT 1 FROM ViewerAccessPlant vap
+                    WHERE vap.UserId = va.UserId AND vap.PlantId = p.PlantId))
+            ORDER BY p.PlantName;
             """, connection);
+        Add(command, "@ViewerId", SqlDbType.Int, viewerId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
@@ -59,6 +84,7 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
     }
 
     public async Task<IReadOnlyList<ViewerCustomerResponse>> GetCustomersAsync(
+        int viewerId,
         int plantId,
         CancellationToken cancellationToken)
     {
@@ -69,11 +95,27 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
             FROM PlantCustomer pc
             INNER JOIN Customer c ON c.CustomerId = pc.CustomerId
             INNER JOIN Plant p ON p.PlantId = pc.PlantId
+            INNER JOIN ViewerAccess va ON va.UserId = @ViewerId
+            INNER JOIN [User] u ON u.UserId = va.UserId AND u.IsActive = 1
+            INNER JOIN Role r ON r.RoleId = u.RoleId AND r.RoleName = 'Viewer'
             WHERE pc.PlantId = @PlantId
               AND c.IsActive = 1
               AND p.IsActive = 1
+              AND (va.AllPlants = 1 OR EXISTS
+                   (SELECT 1 FROM ViewerAccessPlant vap
+                    WHERE vap.UserId = va.UserId AND vap.PlantId = pc.PlantId))
+              AND (va.AllCustomers = 1
+                   OR (va.AllPlants = 1 AND EXISTS
+                       (SELECT 1 FROM ViewerAccessCustomer vac
+                        WHERE vac.UserId = va.UserId AND vac.CustomerId = pc.CustomerId))
+                   OR (va.AllPlants = 0 AND EXISTS
+                       (SELECT 1 FROM ViewerAccessPlantCustomer vapc
+                        WHERE vapc.UserId = va.UserId
+                          AND vapc.PlantId = pc.PlantId
+                          AND vapc.CustomerId = pc.CustomerId)))
             ORDER BY c.CustomerName;
             """, connection);
+        Add(command, "@ViewerId", SqlDbType.Int, viewerId);
         Add(command, "@PlantId", SqlDbType.Int, plantId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -84,39 +126,8 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
         return customers;
     }
 
-    public async Task<bool> IsActivePlantAsync(int plantId, CancellationToken cancellationToken)
-    {
-        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(
-            "SELECT COUNT(1) FROM Plant WHERE PlantId = @PlantId AND IsActive = 1;",
-            connection);
-        Add(command, "@PlantId", SqlDbType.Int, plantId);
-        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) == 1;
-    }
-
-    public async Task<bool> HasCustomerAccessAsync(
-        int plantId,
-        int customerId,
-        CancellationToken cancellationToken)
-    {
-        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand("""
-            SELECT COUNT(1)
-            FROM PlantCustomer pc
-            INNER JOIN Customer c ON c.CustomerId = pc.CustomerId
-            INNER JOIN Plant p ON p.PlantId = pc.PlantId
-            WHERE pc.PlantId = @PlantId
-              AND pc.CustomerId = @CustomerId
-              AND c.IsActive = 1
-              AND p.IsActive = 1;
-            """, connection);
-
-        Add(command, "@PlantId", SqlDbType.Int, plantId);
-        Add(command, "@CustomerId", SqlDbType.Int, customerId);
-        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) == 1;
-    }
-
     public async Task<ViewerProgressResponse> GetProgressAsync(
+        int viewerId,
         int plantId,
         int? customerId,
         string process,
@@ -126,6 +137,22 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
         var lines = new List<ViewerLineProgress>();
         await using var connection = await connectionFactory.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(AccessibleLines + """
+            ,ReportRows AS
+            (
+                SELECT dr.*,
+                    ROW_NUMBER() OVER
+                    (
+                        PARTITION BY dr.PlantId,dr.ReportDate,dr.CustomerId,dr.CategoryId,dr.LineId,dr.ModelId
+                        ORDER BY CASE dr.Status WHEN 'APPROVED' THEN 0 WHEN 'SUBMITTED' THEN 1 ELSE 2 END,
+                            COALESCE(dr.UpdatedAt,dr.CreatedAt) DESC,dr.DailyReportId DESC
+                    ) AS RowNumber
+                FROM DailyReport dr
+                WHERE dr.PlantId=@PlantId
+                  AND dr.ReportDate=@ReportDate
+                  AND dr.IsActive=1
+                  AND dr.ModelId IS NOT NULL
+                  AND dr.Status<>'INACTIVE'
+            )
             SELECT
                 al.CustomerId,
                 al.CustomerName,
@@ -137,38 +164,43 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
                 m.ModelName,
                 dr.DailyReportId,
                 dr.Status,
-                dr.MonthPlan,
-                dr.MonthActual,
-                dr.ProductionPlan,
-                dr.ProductionActual,
-                dr.UPHTarget,
-                dr.UPHActual,
-                dr.UPPHInstalled,
-                dr.UPPHActual,
-                dr.FPYTarget,
-                dr.FPYActual,
-                dr.FTYTarget,
-                dr.FTYActual,
-                dr.RTYTarget,
-                dr.RTYActual,
-                dr.OSDReportingDateValue,
-                dr.OSDReportingDatePercent,
-                dr.OSDMTDValue,
-                dr.OSDMTDPercent,
-                dr.ActualOTManhours,
-                dr.PlannedOTManhours,
-                dr.UnplannedOTManhours,
-                dr.OpenWOQty,
-                dr.Over7DaysWOBalanceQty,
-                dr.DailyTRCInQty,
-                dr.DailyTRCOutQty,
-                dr.TRCOverallFailureInflowPercent,
-                dr.TRCLyingOver3DaysCr,
-                dr.IssueDescription,
-                dr.CPHTarget,
-                dr.CPHActual
+                COALESCE(kd.MonthPlan,dr.MonthPlan),
+                COALESCE(kd.MonthActual,dr.MonthActual),
+                COALESCE(kd.ProductionPlan,dr.ProductionPlan),
+                COALESCE(kd.ProductionActual,dr.ProductionActual),
+                COALESCE(kd.UPHTarget,dr.UPHTarget),
+                COALESCE(kd.UPHActual,dr.UPHActual),
+                COALESCE(kd.UPPHInstalled,dr.UPPHInstalled),
+                COALESCE(kd.UPPHActual,dr.UPPHActual),
+                COALESCE(kd.FPYTarget,dr.FPYTarget),
+                COALESCE(kd.FPYActual,dr.FPYActual),
+                COALESCE(kd.FTYTarget,dr.FTYTarget),
+                COALESCE(kd.FTYActual,dr.FTYActual),
+                COALESCE(kd.RTYTarget,dr.RTYTarget),
+                COALESCE(kd.RTYActual,dr.RTYActual),
+                COALESCE(kd.OSDReportingDateValue,dr.OSDReportingDateValue),
+                COALESCE(kd.OSDReportingDatePercent,dr.OSDReportingDatePercent),
+                COALESCE(kd.OSDMTDValue,dr.OSDMTDValue),
+                COALESCE(kd.OSDMTDPercent,dr.OSDMTDPercent),
+                COALESCE(kd.ActualOTManhours,dr.ActualOTManhours),
+                COALESCE(kd.PlannedOTManhours,dr.PlannedOTManhours),
+                COALESCE(kd.UnplannedOTManhours,dr.UnplannedOTManhours),
+                COALESCE(kd.OpenWOQty,dr.OpenWOQty),
+                COALESCE(kd.Over7DaysWOBalanceQty,dr.Over7DaysWOBalanceQty),
+                COALESCE(kd.DailyTRCInQty,dr.DailyTRCInQty),
+                COALESCE(kd.DailyTRCOutQty,dr.DailyTRCOutQty),
+                COALESCE(kd.TRCOverallFailureInflowPercent,dr.TRCOverallFailureInflowPercent),
+                COALESCE(kd.TRCLyingOver3DaysCr,dr.TRCLyingOver3DaysCr),
+                COALESCE(kd.IssueDescription,dr.IssueDescription),
+                COALESCE(kd.CPHTarget,dr.CPHTarget),
+                COALESCE(kd.CPHActual,dr.CPHActual),
+                COALESCE(kd.OSDTarget,dr.OSDTarget),
+                COALESCE(kd.OTTarget,dr.OTTarget),
+                dr.wip_lying_greater_3_days,
+                dr.wip_lying_greater_7_days,
+                COALESCE(kd.TextValuesJson,dr.TextValuesJson)
             FROM AccessibleLines al
-            LEFT JOIN DailyReport dr
+            LEFT JOIN ReportRows dr
                 ON dr.CustomerId = al.CustomerId
                AND dr.CategoryId = al.CategoryId
                AND dr.LineId = al.LineId
@@ -176,8 +208,9 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
                AND dr.ReportDate = @ReportDate
                AND dr.IsActive = 1
                AND dr.ModelId IS NOT NULL
-               AND dr.Status <> 'INACTIVE'
+               AND dr.RowNumber=1
             LEFT JOIN Model m ON m.ModelId = dr.ModelId
+            LEFT JOIN KPI_Daily kd ON kd.DailyReportId=dr.DailyReportId
             ORDER BY
                 CASE al.Process WHEN 'FATP' THEN 0 WHEN 'SMT' THEN 1 ELSE 2 END,
                 al.CustomerName,
@@ -185,7 +218,7 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
                 m.ModelName;
             """, connection);
 
-        AddScopeParameters(command, plantId, customerId, process);
+        AddScopeParameters(command, viewerId, plantId, customerId, process);
         Add(command, "@ReportDate", SqlDbType.Date, reportDate.Date);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -231,7 +264,12 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
                 TRCLyingOver3DaysCr: GetDecimal(reader, 36),
                 IssueDescription: GetString(reader, 37),
                 CPHTarget: GetDecimal(reader, 38),
-                CPHActual: GetDecimal(reader, 39)));
+                CPHActual: GetDecimal(reader, 39),
+                OSDTarget: GetDecimal(reader, 40),
+                OTTarget: GetDecimal(reader, 41),
+                WIPLyingGreater3Days: GetInt(reader, 42),
+                WIPLyingGreater7Days: GetInt(reader, 43),
+                TextValues: ParseTextValues(GetString(reader, 44))));
         }
 
         var totalPlan = lines.Sum(line => line.ProductionPlan ?? 0);
@@ -248,6 +286,7 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
     }
 
     public async Task<IReadOnlyList<ViewerTrendPoint>> GetTrendAsync(
+        int viewerId,
         int plantId,
         int? customerId,
         string process,
@@ -277,7 +316,7 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
             ORDER BY dr.ReportDate;
             """, connection);
 
-        AddScopeParameters(command, plantId, customerId, process);
+        AddScopeParameters(command, viewerId, plantId, customerId, process);
         Add(command, "@StartDate", SqlDbType.Date, startDate.Date);
         Add(command, "@EndDate", SqlDbType.Date, endDate.Date);
 
@@ -295,10 +334,12 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
 
     private static void AddScopeParameters(
         SqlCommand command,
+        int viewerId,
         int plantId,
         int? customerId,
         string process)
     {
+        Add(command, "@ViewerId", SqlDbType.Int, viewerId);
         Add(command, "@PlantId", SqlDbType.Int, plantId);
         Add(command, "@CustomerId", SqlDbType.Int, customerId);
         Add(command, "@Process", SqlDbType.VarChar, process, 10);
@@ -325,6 +366,17 @@ public sealed class ViewerRepository(SqlConnectionFactory connectionFactory)
 
     private static string? GetString(SqlDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+
+    private static IReadOnlyDictionary<string, string> ParseTextValues(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        var values = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+        return values is null
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(values, StringComparer.OrdinalIgnoreCase);
+    }
 }
 
 public sealed record ViewerSummary(
@@ -374,7 +426,12 @@ public sealed record ViewerLineProgress(
     decimal? TRCLyingOver3DaysCr,
     string? IssueDescription,
     decimal? CPHTarget,
-    decimal? CPHActual)
+    decimal? CPHActual,
+    decimal? OSDTarget,
+    decimal? OTTarget,
+    int? WIPLyingGreater3Days,
+    int? WIPLyingGreater7Days,
+    IReadOnlyDictionary<string, string> TextValues)
 {
     public decimal Achievement =>
         ProductionPlan is decimal plan && plan > 0

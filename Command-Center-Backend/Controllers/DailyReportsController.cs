@@ -10,7 +10,7 @@ using Microsoft.Data.SqlClient;
 namespace Dixon.CommandCenter.API.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Roles = "Admin,SuperAdmin,Approver,Contributor")]
 [Route("api/daily-reports")]
 public sealed class DailyReportsController(
     SqlConnectionFactory connectionFactory,
@@ -1525,13 +1525,250 @@ public sealed class DailyReportsController(
     // ============================================================
 
     [HttpPost("submit")]
-    public async Task<IActionResult> Submit(
-        [FromBody] DailyReportRequest request,
+    public IActionResult Submit()
+    {
+        if (!User.IsInRole("Contributor"))
+            return Forbid();
+        return BadRequest(new
+        {
+            message = "Line or category submission is disabled. Save drafts, then submit FATP and SMT together using the full date report action."
+        });
+    }
+
+    [HttpPost("submit-date")]
+    public async Task<IActionResult> SubmitDateReport(
+        [FromBody] DailyReportDateSubmissionRequest request,
         CancellationToken cancellationToken)
-        => await Save(
-            request,
-            "SUBMITTED",
+    {
+        if (!User.IsInRole("Contributor"))
+            return Forbid();
+        if (request.ReportDate.Date > DateTime.Today)
+            return BadRequest(new { message = "A future reporting date cannot be submitted." });
+        if (request.SubmissionBatchId == Guid.Empty)
+            return BadRequest(new { message = "A valid submission batch ID is required." });
+
+        var userId = GetUserId();
+        var plantId = GetPlantId();
+        if (userId <= 0 || plantId <= 0)
+            return Unauthorized(new { message = "The current user or plant could not be identified." });
+        if (!await HasCustomerAccessAsync(request.CustomerId, cancellationToken))
+            return Forbid();
+
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(
+            IsolationLevel.Serializable,
             cancellationToken);
+
+        try
+        {
+            const string categoriesSql = """
+                SELECT CategoryId, UPPER(CategoryName)
+                FROM Category WITH (UPDLOCK, HOLDLOCK)
+                WHERE PlantId=@PlantId AND CustomerId=@CustomerId AND IsActive=1
+                  AND UPPER(CategoryName) IN ('FATP','SMT');
+                """;
+            var categoryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await using (var categories = new SqlCommand(categoriesSql, connection, transaction))
+            {
+                Add(categories, "@PlantId", SqlDbType.Int, plantId);
+                Add(categories, "@CustomerId", SqlDbType.Int, request.CustomerId);
+                await using var reader = await categories.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    categoryNames.Add(reader.GetString(1));
+                }
+            }
+
+            if (!categoryNames.Contains("FATP") || !categoryNames.Contains("SMT"))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return BadRequest(new { message = "Both active FATP and SMT categories must be configured before submitting the full date report." });
+            }
+
+            const string batchScopeSql = """
+                SELECT COUNT(1)
+                FROM DailyReport WITH (UPDLOCK,HOLDLOCK)
+                WHERE SubmissionBatchId=@BatchId
+                  AND (PlantId<>@PlantId OR ReportDate<>@ReportDate OR CustomerId<>@CustomerId OR CreatedBy<>@UserId
+                    OR CategoryId NOT IN
+                      (SELECT CategoryId FROM Category WHERE PlantId=@PlantId AND CustomerId=@CustomerId
+                       AND IsActive=1 AND UPPER(CategoryName) IN ('FATP','SMT')));
+                """;
+            await using (var batchScope = new SqlCommand(batchScopeSql, connection, transaction))
+            {
+                Add(batchScope, "@BatchId", SqlDbType.UniqueIdentifier, request.SubmissionBatchId);
+                Add(batchScope, "@PlantId", SqlDbType.Int, plantId);
+                Add(batchScope, "@ReportDate", SqlDbType.Date, request.ReportDate.Date);
+                Add(batchScope, "@CustomerId", SqlDbType.Int, request.CustomerId);
+                Add(batchScope, "@UserId", SqlDbType.Int, userId);
+                if (Convert.ToInt32(await batchScope.ExecuteScalarAsync(cancellationToken)) > 0)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return BadRequest(new { message = "The submission batch ID is already assigned to another report." });
+                }
+            }
+
+            const string incompleteLinesSql = """
+                SELECT COUNT(1)
+                FROM ProductionLine pl
+                INNER JOIN Category cat ON cat.CategoryId=pl.CategoryId
+                WHERE pl.PlantId=@PlantId AND pl.IsActive=1
+                  AND cat.PlantId=@PlantId AND cat.CustomerId=@CustomerId AND cat.IsActive=1
+                  AND UPPER(cat.CategoryName) IN ('FATP','SMT')
+                  AND NOT EXISTS
+                  (
+                      SELECT 1
+                      FROM DailyReport lineState WITH (UPDLOCK,HOLDLOCK)
+                      WHERE lineState.PlantId=@PlantId AND lineState.ReportDate=@ReportDate
+                        AND lineState.CustomerId=@CustomerId AND lineState.CategoryId=cat.CategoryId
+                        AND lineState.LineId=pl.LineId AND lineState.CreatedBy=@UserId
+                        AND ((lineState.ModelId IS NULL AND lineState.IsActive=0)
+                          OR (lineState.ModelId IS NOT NULL AND lineState.IsActive=1 AND lineState.Status<>'INACTIVE'))
+                  );
+                """;
+            await using (var incompleteLines = new SqlCommand(incompleteLinesSql, connection, transaction))
+            {
+                Add(incompleteLines, "@PlantId", SqlDbType.Int, plantId);
+                Add(incompleteLines, "@ReportDate", SqlDbType.Date, request.ReportDate.Date);
+                Add(incompleteLines, "@CustomerId", SqlDbType.Int, request.CustomerId);
+                Add(incompleteLines, "@UserId", SqlDbType.Int, userId);
+                if (Convert.ToInt32(await incompleteLines.ExecuteScalarAsync(cancellationToken)) > 0)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return Conflict(new { message = "Save a draft for every active FATP and SMT line, or mark unused lines inactive, before submitting the full date report." });
+                }
+            }
+
+            const string alreadySubmittedSql = """
+                SELECT COUNT(1)
+                FROM DailyReport dr WITH (UPDLOCK,HOLDLOCK)
+                INNER JOIN Category cat ON cat.CategoryId=dr.CategoryId
+                LEFT JOIN ApprovalQueue aq WITH (UPDLOCK,HOLDLOCK) ON aq.DailyReportId=dr.DailyReportId
+                WHERE dr.PlantId=@PlantId AND dr.ReportDate=@ReportDate
+                  AND dr.CustomerId=@CustomerId AND dr.CreatedBy=@UserId
+                  AND cat.PlantId=@PlantId AND cat.IsActive=1 AND UPPER(cat.CategoryName) IN ('FATP','SMT')
+                  AND dr.ModelId IS NOT NULL AND dr.IsActive=1
+                  AND (dr.Status='APPROVED'
+                    OR (dr.Status='SUBMITTED' AND (dr.SubmissionBatchId IS NULL
+                      OR (dr.SubmissionBatchId<>@BatchId AND COALESCE(aq.Status,'')<>'PENDING'))));
+                """;
+            await using (var alreadySubmitted = new SqlCommand(alreadySubmittedSql, connection, transaction))
+            {
+                Add(alreadySubmitted, "@PlantId", SqlDbType.Int, plantId);
+                Add(alreadySubmitted, "@ReportDate", SqlDbType.Date, request.ReportDate.Date);
+                Add(alreadySubmitted, "@CustomerId", SqlDbType.Int, request.CustomerId);
+                Add(alreadySubmitted, "@UserId", SqlDbType.Int, userId);
+                Add(alreadySubmitted, "@BatchId", SqlDbType.UniqueIdentifier, request.SubmissionBatchId);
+                if (Convert.ToInt32(await alreadySubmitted.ExecuteScalarAsync(cancellationToken)) > 0)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return Conflict(new { message = "A FATP or SMT report for this date was already submitted separately. It cannot be combined into a new full-date submission." });
+                }
+            }
+
+            const string submitDraftsSql = """
+                UPDATE dr
+                SET Status='SUBMITTED', SubmissionBatchId=@BatchId, SubmissionBatchEnforced=1,
+                    SubmittedAt=SYSUTCDATETIME(), UpdatedAt=SYSUTCDATETIME()
+                OUTPUT INSERTED.DailyReportId, DELETED.Status
+                FROM DailyReport dr
+                INNER JOIN Category cat ON cat.CategoryId=dr.CategoryId
+                LEFT JOIN ApprovalQueue aq ON aq.DailyReportId=dr.DailyReportId
+                WHERE dr.PlantId=@PlantId AND dr.ReportDate=@ReportDate AND dr.CustomerId=@CustomerId
+                  AND dr.CreatedBy=@UserId AND cat.PlantId=@PlantId AND cat.IsActive=1
+                  AND UPPER(cat.CategoryName) IN ('FATP','SMT')
+                  AND dr.ModelId IS NOT NULL AND dr.IsActive=1
+                  AND (dr.Status IN ('DRAFT','REJECTED')
+                    OR (dr.Status='SUBMITTED' AND dr.SubmissionBatchId<>@BatchId AND aq.Status='PENDING'));
+                """;
+            var newlySubmitted = new List<(int Id, string PreviousStatus)>();
+            await using (var submitDrafts = new SqlCommand(submitDraftsSql, connection, transaction))
+            {
+                Add(submitDrafts, "@BatchId", SqlDbType.UniqueIdentifier, request.SubmissionBatchId);
+                Add(submitDrafts, "@PlantId", SqlDbType.Int, plantId);
+                Add(submitDrafts, "@ReportDate", SqlDbType.Date, request.ReportDate.Date);
+                Add(submitDrafts, "@CustomerId", SqlDbType.Int, request.CustomerId);
+                Add(submitDrafts, "@UserId", SqlDbType.Int, userId);
+                await using var reader = await submitDrafts.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                    newlySubmitted.Add((reader.GetInt32(0), reader.GetString(1)));
+            }
+
+            var submittedIds = newlySubmitted.Select(item => item.Id).ToList();
+            const string sameBatchSql = """
+                SELECT DailyReportId
+                FROM DailyReport
+                WHERE PlantId=@PlantId AND ReportDate=@ReportDate AND CustomerId=@CustomerId
+                  AND CreatedBy=@UserId AND SubmissionBatchId=@BatchId
+                  AND IsActive=1 AND ModelId IS NOT NULL AND Status='SUBMITTED';
+                """;
+            await using (var sameBatch = new SqlCommand(sameBatchSql, connection, transaction))
+            {
+                Add(sameBatch, "@PlantId", SqlDbType.Int, plantId);
+                Add(sameBatch, "@ReportDate", SqlDbType.Date, request.ReportDate.Date);
+                Add(sameBatch, "@CustomerId", SqlDbType.Int, request.CustomerId);
+                Add(sameBatch, "@UserId", SqlDbType.Int, userId);
+                Add(sameBatch, "@BatchId", SqlDbType.UniqueIdentifier, request.SubmissionBatchId);
+                await using var reader = await sameBatch.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                    if (!submittedIds.Contains(reader.GetInt32(0)))
+                        submittedIds.Add(reader.GetInt32(0));
+            }
+
+            if (submittedIds.Count == 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return Conflict(new { message = "There are no saved FATP or SMT draft reports to submit." });
+            }
+
+            if (newlySubmitted.Count == 0)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return Ok(new
+                {
+                    message = "FATP and SMT reports for the date were already submitted together.",
+                    reportDate = request.ReportDate.ToString("yyyy-MM-dd"),
+                    submissionBatchId = request.SubmissionBatchId,
+                    submittedReports = submittedIds.Count,
+                    categories = categoryNames
+                });
+            }
+
+            foreach (var dailyReportId in submittedIds)
+            {
+                await ResolveReportAnnotationsAsync(connection, transaction, dailyReportId, userId, cancellationToken);
+                await UpsertApprovalQueueAsync(connection, transaction, dailyReportId, userId, cancellationToken);
+            }
+
+            foreach (var (dailyReportId, previousStatus) in newlySubmitted.Where(item => item.PreviousStatus != "SUBMITTED"))
+            {
+                const string activitySql = """
+                    INSERT INTO ReportApproval(DailyReportId,ActionBy,ActionType,Comments,ActionAt)
+                    VALUES(@DailyReportId,@UserId,@ActionType,NULL,SYSUTCDATETIME());
+                    """;
+                await using var activity = new SqlCommand(activitySql, connection, transaction);
+                Add(activity, "@DailyReportId", SqlDbType.Int, dailyReportId);
+                Add(activity, "@UserId", SqlDbType.Int, userId);
+                Add(activity, "@ActionType", SqlDbType.VarChar, previousStatus == "REJECTED" ? "RESUBMITTED" : "SUBMITTED");
+                await activity.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            return Ok(new
+            {
+                message = "FATP and SMT reports for the date were submitted together.",
+                reportDate = request.ReportDate.ToString("yyyy-MM-dd"),
+                submissionBatchId = request.SubmissionBatchId,
+                submittedReports = submittedIds.Count,
+                categories = categoryNames
+            });
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
 
 
     // ============================================================
@@ -2898,6 +3135,13 @@ public sealed class LineStatusRequest
 // ==================================================================
 // DAILY REPORT REQUEST
 // ==================================================================
+
+public sealed class DailyReportDateSubmissionRequest
+{
+    public DateTime ReportDate { get; set; }
+    public int CustomerId { get; set; }
+    public Guid SubmissionBatchId { get; set; }
+}
 
 public sealed class DailyReportRequest
 {

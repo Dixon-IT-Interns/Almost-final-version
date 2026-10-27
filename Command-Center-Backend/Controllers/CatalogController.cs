@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Dixon.CommandCenter.API.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Roles = "Admin,SuperAdmin,Approver,Contributor")]
 [Route("api/catalog")]
 public sealed class CatalogController(CatalogRepository catalog) : ControllerBase
 {

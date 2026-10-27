@@ -6,6 +6,14 @@ For an existing database, run `Database/013_user_profile.sql` to add phone verif
 
 Run `Database/016_daily_report_non_numeric_values.sql` on existing databases before deploying the API version that supports `N/P` and `N/A` values in daily reports.
 
+## Viewer access assignment rollout
+
+For an existing database, review and run `Database/018_viewer_access_assignments.sql`, then `Database/019_viewer_plant_customer_assignments.sql`, as part of a planned rollout. Migration 018 creates explicit All Plants / All Customers flags and normalized plant/customer assignment tables; it does not modify existing report or user rows. Migration 019 adds plant-specific customer assignments and preserves currently valid pairs from existing specific-plant Viewer configurations. The migrations intentionally do not infer a Viewer’s previous broad scope. Migration 018's final query lists Viewers without assignments; review that list and agree each user's intended scope with administrators before deployment. After deploying the API and Admin UI, assign every existing Viewer through Admin > Users & access before restoring their Viewer reporting access. Until an assignment is saved, the Viewer reporting APIs return forbidden. Plan for this explicit fail-closed transition; do not silently grant global access or allow Viewers to resume with an unreviewed scope.
+
+Plant Admin is the existing plant-scoped `Admin` role. It can configure Viewers whose home plant is its own and assign only that plant; only SuperAdmin can grant All Plants or configure multiple plants. In Specific Plants mode, select one or more plants and choose each plant's customers independently. The same customer can be assigned at one selected plant and withheld at another. With All Plants + Specific Customers, the selected customer list applies wherever those customers are mapped, including future plant mappings. Selections are validated against active plants, customers, and `PlantCustomer` mappings, then saved atomically; obsolete pair assignments cannot grant access after mappings or plant access change.
+
+Viewer plants, customers, daily progress, trends, and Excel exports all use the same database-backed assignment. Generic contributor/reference catalog and daily-report routes are not available to the Viewer role; other roles retain their existing route access.
+
 ## Local configuration
 
 Set the SQL Server connection string in the environment so credentials are not committed:
@@ -43,6 +51,7 @@ $env:Sms__OtpSigningKey = "a-long-random-secret"
 - `GET /api/catalog/customers` returns customers with models, categories, and production lines.
 - `GET /api/admin/catalog/plants/{id}/customers` and `PUT /api/admin/catalog/plants/{id}/customers` manage a plant's customer associations (Admin role).
 - `GET /api/admin/users`, `/roles`, and `/plants` are scoped to the Admin's plant; SuperAdmins can manage users across plants.
+- `GET /api/admin/users/{id}/viewer-access` and `PUT /api/admin/users/{id}/viewer-access` read and replace a Viewer’s explicit plant/customer scope. In Specific Plants mode, the update body uses `plantCustomerAssignments` entries with `plantId` and `customerId`; Plant Admin assignments are limited to the Admin’s plant.
 - `POST /api/admin/users` lets SuperAdmins create plant Admins. Plant Admins can create only non-admin roles in their own plant.
 - `GET /api/approver/dashboard`, `/daily-reports`, and `/activity` return plant/customer-assigned metrics, paginated report entries, and review events for Approver pages.
 - `GET /api/approvals/batch/{id}` returns all submitted line/model entries for a reporting batch. Its `/approve` and `/reject` actions record one transactional batch decision; reject requests can contain RED/YELLOW field annotations.

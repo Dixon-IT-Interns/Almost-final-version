@@ -7,7 +7,7 @@ using Microsoft.Data.SqlClient;
 namespace Dixon.CommandCenter.API.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Roles = "Admin,SuperAdmin,Approver,Contributor")]
 [Route("api")]
 public sealed class ReferenceDataController(SqlConnectionFactory connectionFactory) : ControllerBase
 {
