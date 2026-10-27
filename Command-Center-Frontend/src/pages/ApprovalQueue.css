@@ -1,0 +1,49 @@
+.approver-date-group h3 {
+  margin: 0;
+  padding: 10px 13px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--secondary);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.approver-report-card {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+}
+
+.approver-report-card strong {
+  font-size: 12px;
+}
+
+.approver-report-date {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.approver-report-category {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.approver-report-card small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.approver-report-card small b {
+  color: var(--secondary);
+}
+
+@media (max-width: 700px) {
+  .approver-review-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -4,6 +4,8 @@ The API uses the existing SQL Server schema in `Dixon_Command_Center`. Create or
 
 For an existing database, run `Database/013_user_profile.sql` to add phone verification fields and profile photos before using the profile page. Run `Database/014_approval_batches_and_annotations.sql` to add submission-cycle IDs and field-level review audit before using consolidated Approver reviews.
 
+Run `Database/016_daily_report_non_numeric_values.sql` on existing databases before deploying the API version that supports `N/P` and `N/A` values in daily reports.
+
 ## Local configuration
 
 Set the SQL Server connection string in the environment so credentials are not committed:

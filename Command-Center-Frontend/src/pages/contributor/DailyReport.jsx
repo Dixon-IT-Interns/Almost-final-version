@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   AlertCircle, ArrowLeft, CheckCircle2, ClipboardList, Loader2,
   Plus, Send, ToggleLeft, ToggleRight, Trash2, Upload, X
@@ -88,6 +88,95 @@ const KPI_PLAN_FIELDS = [
   "fpyTarget", "ftyTarget", "rtyTarget", "osdTarget", "otTarget",
 ];
 
+const TARGET_FIELDS = new Set([
+  "monthPlan", ...KPI_PLAN_FIELDS,
+]);
+const NON_NUMERIC_MARKERS = new Set(["N/P", "N/A"]);
+
+const PERCENTAGE_FIELDS = new Set([
+  "fpyTarget", "fpyActual", "ftyTarget", "ftyActual", "rtyTarget", "rtyActual",
+  "osdReportingDatePercent", "osdMtdPercent", "trcOverallFailureInflowPercent",
+]);
+
+const INTEGER_FIELDS = new Set([
+  "openWOQty", "over7DaysWOBalanceQty", "dailyTRCInQty", "dailyTRCOutQty",
+  "wipLyingGreater3Days", "wipLyingGreater7Days",
+]);
+
+const NUMERIC_FIELDS = new Set([
+  "monthPlan", "monthActual", "productionPlan", "productionActual",
+  "uphTarget", "uphActual", "upphTarget", "upphInstalled", "upphActual",
+  "cphTarget", "cphActual", "fpyTarget", "fpyActual", "ftyTarget", "ftyActual",
+  "rtyTarget", "rtyActual", "osdTarget", "osdReportingDateValue",
+  "osdReportingDatePercent", "osdMtdValue", "osdMtdPercent", "otTarget",
+  "plannedOTManhours", "unplannedOTManhours", "actualOTManhours",
+  "openWOQty", "over7DaysWOBalanceQty", "wipLyingGreater3Days",
+  "wipLyingGreater7Days", "dailyTRCInQty", "dailyTRCOutQty",
+  "trcOverallFailureInflowPercent", "trcLyingOver3DaysCr",
+]);
+
+const ACTUAL_TARGET_FIELDS = {
+  monthActual: "monthPlan",
+  productionActual: "productionPlan",
+  uphActual: "uphTarget",
+  upphActual: "upphTarget",
+  cphActual: "cphTarget",
+  fpyActual: "fpyTarget",
+  ftyActual: "ftyTarget",
+  rtyActual: "rtyTarget",
+  actualOTManhours: "otTarget",
+};
+
+function getFieldValidation(form, field) {
+  const rawValue = form?.[field];
+  if (rawValue === null || rawValue === undefined || String(rawValue).trim() === "")
+    return { status: "empty", message: "Not entered" };
+
+  if (field === "issueDescription")
+    return { status: "valid", message: "Entered" };
+
+  if (["N/P", "N/A"].includes(String(rawValue).trim().toUpperCase()))
+    return { status: "valid", message: String(rawValue).trim().toUpperCase() };
+
+  const value = Number(rawValue);
+  if (!Number.isFinite(value))
+    return { status: "invalid", message: "Enter a number, N/P or N/A." };
+  if (value < 0)
+    return { status: "invalid", message: "Value cannot be below 0." };
+  if (PERCENTAGE_FIELDS.has(field) && value > 100)
+    return { status: "invalid", message: "Percentage must be between 0 and 100." };
+  if (INTEGER_FIELDS.has(field) && !Number.isInteger(value))
+    return { status: "invalid", message: "Quantity must be a whole number." };
+
+  if (TARGET_FIELDS.has(field))
+    return { status: "target", message: "Plan / target" };
+
+  const targetField = ACTUAL_TARGET_FIELDS[field];
+  const target = targetField ? Number(form?.[targetField]) : null;
+  const targetIsValid = targetField
+    && form?.[targetField] !== ""
+    && form?.[targetField] !== null
+    && form?.[targetField] !== undefined
+    && Number.isFinite(target)
+    && target >= 0
+    && (!PERCENTAGE_FIELDS.has(targetField) || target <= 100);
+  if (targetIsValid && value > target)
+    return { status: "invalid", message: `Actual is above its target (${target}).` };
+
+  return { status: "valid", message: "Within allowed range" };
+}
+
+function clearValidationOverrides(overrides, changedFields) {
+  const next = { ...overrides };
+  for (const field of changedFields) {
+    delete next[field];
+    Object.entries(ACTUAL_TARGET_FIELDS)
+      .filter(([, targetField]) => targetField === field)
+      .forEach(([actualField]) => delete next[actualField]);
+  }
+  return next;
+}
+
 const UPLOAD_TYPES = [
   { value: "ie", label: "IE", group: "Production" },
   { value: "production", label: "Production", group: "Production" },
@@ -123,8 +212,11 @@ function fieldsForUploadType(value) {
 
 function filterImportedForm(form, value) {
   const allowed = fieldsForUploadType(value);
-  return Object.fromEntries(Object.entries(form || {}).filter(([field]) => (
-    field !== "presentFields" && (!allowed || allowed.has(field))
+  const source = { ...(form || {}), ...(form?.nonNumericValues || {}) };
+  delete source.presentFields;
+  delete source.nonNumericValues;
+  return Object.fromEntries(Object.entries(source).filter(([field]) => (
+    !allowed || allowed.has(field)
   )));
 }
 
@@ -176,6 +268,15 @@ function today() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function validReportDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(year, month - 1, day);
+  return parsed.getFullYear() === year
+    && parsed.getMonth() === month - 1
+    && parsed.getDate() === day;
+}
+
 function normalizeCustomerName(value) {
   return String(value || "").replace(/[^a-z0-9]/gi, "").toUpperCase();
 }
@@ -210,18 +311,25 @@ function prefillPlanTargets(form, plan, editedFields = []) {
 export default function DailyReport({ session, onSignOut }) {
   const navigate = useNavigate();
   const { customerId, categoryId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [customer, setCustomer] = useState(null);
   const [category, setCategory] = useState(null);
   const [lines, setLines] = useState([]);
   const [lineData, setLineData] = useState({});
-  const [reportDate, setReportDate] = useState(today());
+  const [reportDate, setReportDate] = useState(() => (
+    validReportDate(searchParams.get("date")) ? searchParams.get("date") : today()
+  ));
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [importPreview, setImportPreview] = useState(null);
   const [importDateConfirmed, setImportDateConfirmed] = useState(false);
   const [pendingProductionImport, setPendingProductionImport] = useState(null);
-  const [uploadType, setUploadType] = useState("production");
+  const [uploadType, setUploadType] = useState(() => (
+    UPLOAD_TYPES.some((item) => item.value === searchParams.get("uploadType"))
+      ? searchParams.get("uploadType")
+      : "production"
+  ));
   const [lockedUploadTypes, setLockedUploadTypes] = useState([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -368,8 +476,8 @@ export default function DailyReport({ session, onSignOut }) {
               rejectionReason: item.rejectionReason || "",
               submissionBatchId: item.submissionBatchId || null,
               annotations: (reviewerAnnotations || []).filter((annotation) => Number(annotation.dailyReportId) === Number(item.dailyReportId)),
-              form: { ...EMPTY_FORM, ...item },
-              initialForm: { ...EMPTY_FORM, ...item },
+              form: { ...EMPTY_FORM, ...item, ...(item.textValues || {}) },
+              initialForm: { ...EMPTY_FORM, ...item, ...(item.textValues || {}) },
               isNew: false,
               plan,
               planStatus,
@@ -436,8 +544,14 @@ export default function DailyReport({ session, onSignOut }) {
         entries: current[lineId].entries.map((entry) => {
           if (entry.entryId !== entryId) return entry;
           const editedFields = new Set(entry.planEditedFields || []);
+          const validationOverrides = clearValidationOverrides(
+            entry.validationOverrides,
+            [field]
+          );
           if (KPI_PLAN_FIELDS.includes(field)) {
-            if (asNumber(value) === asNumber(entry.initialForm?.[field]))
+            if (NON_NUMERIC_MARKERS.has(String(value).trim().toUpperCase()))
+              editedFields.delete(field);
+            else if (asNumber(value) === asNumber(entry.initialForm?.[field]))
               editedFields.delete(field);
             else if (asNumber(value) !== asNumber(entry.form[field]))
               editedFields.add(field);
@@ -447,11 +561,37 @@ export default function DailyReport({ session, onSignOut }) {
             status: entry.status === "APPROVED" ? entry.status : "DRAFT",
             form: { ...entry.form, [field]: value },
             planEditedFields: [...editedFields],
+            validationOverrides,
           };
         }),
       },
     }));
     setNotice("");
+  };
+
+  const changeReportDate = (value) => {
+    loadSequence.current += 1;
+    setReportDate(value);
+    const nextParams = new URLSearchParams(searchParams);
+    if (value) nextParams.set("date", value);
+    else nextParams.delete("date");
+    setSearchParams(nextParams, { replace: true });
+  };
+
+  const setValidationOverride = (lineId, entryId, field, accepted) => {
+    setLineData((current) => ({
+      ...current,
+      [lineId]: {
+        ...current[lineId],
+        entries: current[lineId].entries.map((entry) => {
+          if (entry.entryId !== entryId) return entry;
+          const validationOverrides = { ...entry.validationOverrides };
+          if (accepted) validationOverrides[field] = true;
+          else delete validationOverrides[field];
+          return { ...entry, validationOverrides };
+        }),
+      },
+    }));
   };
 
   const setEntryPlan = (lineId, entryId, plan, planStatus, planError = "") => {
@@ -708,12 +848,16 @@ export default function DailyReport({ session, onSignOut }) {
   const buildPayload = (lineId, entry, submissionBatchId = null) => ({
     reportDate,
     submissionBatchId,
+    nonNumericValues: Object.fromEntries([...NUMERIC_FIELDS]
+      .filter((field) => NON_NUMERIC_MARKERS.has(String(entry.form[field] || "").trim().toUpperCase()))
+      .map((field) => [field, String(entry.form[field]).trim().toUpperCase()])),
     customerId: Number(customerId), categoryId: Number(categoryId), lineId: Number(lineId), modelId: Number(entry.modelId),
     kpiPlanId: entry.plan?.planId ?? null,
     kpiPlanUpdatedAt: entry.plan?.updatedAt ?? null,
     planEdits: entry.plan
       ? (entry.planEditedFields || [])
           .filter((field) => KPI_PLAN_FIELDS.includes(field)
+            && !NON_NUMERIC_MARKERS.has(String(entry.form[field] || "").trim().toUpperCase())
             && asNumber(entry.form[field]) !== asNumber(entry.plan[field]))
           .map((field) => ({ field, value: asNumber(entry.form[field]) }))
       : [],
@@ -747,6 +891,16 @@ export default function DailyReport({ session, onSignOut }) {
     if (new Set(line.entries.map((entry) => String(entry.modelId))).size !== line.entries.length) {
       return setError(`${getLineName(lineId)} contains the same model more than once.`);
     }
+    const invalidText = line.entries.flatMap((entry) => [...NUMERIC_FIELDS]
+      .filter((field) => {
+        const value = entry.form?.[field];
+        if (value === "" || value === null || value === undefined) return false;
+        const text = String(value).trim().toUpperCase();
+        return text !== "N/P" && text !== "N/A" && !Number.isFinite(Number(text));
+      })
+      .map((field) => `${entry.modelName}: ${field}`));
+    if (invalidText.length)
+      return setError(`Use a number, N/P or N/A in numeric report fields. Check ${invalidText.slice(0, 3).join(", ")}.`);
     setBusy(`${submit ? "submit" : "save"}-${lineId}`); setError(""); setNotice("");
     try {
       const reportKey = `${customerId}:${categoryId}:${reportDate}`;
@@ -858,13 +1012,15 @@ export default function DailyReport({ session, onSignOut }) {
             const existing = entries[existingIndex];
             const presentFields = new Set(imported.form?.presentFields || Object.keys(imported.form || {}));
             const formValues = filterImportedForm(
-              Object.fromEntries(Object.entries(imported.form || {}).filter(([field]) => presentFields.has(field))),
+              Object.fromEntries(Object.entries(imported.form || {}).filter(([field]) => presentFields.has(field) || field === "nonNumericValues")),
               uploadType
             );
             const editedFields = new Set(existing.planEditedFields || []);
             for (const field of KPI_PLAN_FIELDS) {
               if (formValues[field] === null || formValues[field] === undefined || formValues[field] === "")
                 delete formValues[field];
+              else if (NON_NUMERIC_MARKERS.has(String(formValues[field]).trim().toUpperCase()))
+                editedFields.delete(field);
               else if (asNumber(formValues[field]) === asNumber(existing.initialForm?.[field]))
                 editedFields.delete(field);
               else
@@ -875,11 +1031,15 @@ export default function DailyReport({ session, onSignOut }) {
               form: { ...existing.form, ...formValues },
               status: "DRAFT",
               planEditedFields: [...editedFields],
+              validationOverrides: clearValidationOverrides(
+                existing.validationOverrides,
+                Object.keys(formValues)
+              ),
             }
           } else {
             const presentFields = new Set(imported.form?.presentFields || Object.keys(imported.form || {}));
             const importedForm = filterImportedForm(
-              Object.fromEntries(Object.entries(imported.form || {}).filter(([field]) => presentFields.has(field))),
+              Object.fromEntries(Object.entries(imported.form || {}).filter(([field]) => presentFields.has(field) || field === "nonNumericValues")),
               uploadType
             );
             const form = { ...EMPTY_FORM, ...importedForm };
@@ -1186,7 +1346,9 @@ export default function DailyReport({ session, onSignOut }) {
             const editedFields = new Set(existing.planEditedFields || []);
             for (const field of KPI_PLAN_FIELDS) {
               if (!(field in form)) continue;
-              if (asNumber(form[field]) === asNumber(existing.initialForm?.[field]))
+              if (NON_NUMERIC_MARKERS.has(String(form[field]).trim().toUpperCase()))
+                editedFields.delete(field);
+              else if (asNumber(form[field]) === asNumber(existing.initialForm?.[field]))
                 editedFields.delete(field);
               else
                 editedFields.add(field);
@@ -1315,7 +1477,7 @@ export default function DailyReport({ session, onSignOut }) {
           <div className="report-context-bar">
             <div><span>BRAND</span><strong>{customer?.customerName || "—"}</strong></div>
             <div><span>CATEGORY</span><strong>{category?.categoryName || "—"}</strong></div>
-            <label><span>REPORT DATE</span><input type="date" max={today()} value={reportDate} onChange={(e) => { loadSequence.current += 1; setReportDate(e.target.value); }} /></label>
+            <label><span>REPORT DATE</span><input type="date" max={today()} value={reportDate} onChange={(e) => changeReportDate(e.target.value)} /></label>
             <div><span>PROGRESS</span><strong>{completed}/{lines.length} lines completed</strong></div>
           </div>
 
@@ -1392,6 +1554,7 @@ export default function DailyReport({ session, onSignOut }) {
                   <thead><tr><th>Use</th><th>Source row</th><th>Original Excel values</th><th>Map to active line</th><th>Map to brand model</th><th>Values to stage</th><th>Review status</th></tr></thead>
                   <tbody>
                     {importPreview.rows.map((row, index) => {
+                      const previewValues = { ...(row.form || {}), ...(row.form?.nonNumericValues || {}) };
                       const selectedLineId = Number(row.selectedLineId);
                       const selectedLine = lineData[selectedLineId];
                       const modelOptions = selectedLine?.models || [];
@@ -1453,9 +1616,9 @@ export default function DailyReport({ session, onSignOut }) {
                           <td><div className="excel-staged-values">
                             {IMPORT_PREVIEW_FIELDS.filter(([, key]) => {
                               const allowed = fieldsForUploadType(uploadType);
-                              return (!allowed || allowed.has(key)) && row.form?.[key] !== null && row.form?.[key] !== undefined && row.form?.[key] !== "";
+                              return (!allowed || allowed.has(key)) && previewValues[key] !== null && previewValues[key] !== undefined && previewValues[key] !== "";
                             })
-                              .map(([label, key]) => <span key={key}><b>{label}:</b> {String(row.form[key])}</span>)}
+                              .map(([label, key]) => <span key={key}><b>{label}:</b> {String(previewValues[key])}</span>)}
                             {row.status === "invalid" && <span className="excel-invalid-note">Invalid cells are omitted; all other displayed values are staged.</span>}
                           </div></td>
                           <td><strong>{statusLabel}</strong>{row.reason && <span>{row.reason}</span>}</td>
@@ -1476,6 +1639,12 @@ export default function DailyReport({ session, onSignOut }) {
             <div className="report-message info"><Loader2 size={18} className="spin" /><div><strong>Loading {category?.categoryName || "daily"} report</strong><p>Loading lines, models, saved values and monthly KPI plans…</p></div></div>
           ) : (
             <section className="matrix-shell">
+              <div className="matrix-validation-legend" aria-label="Field color guide">
+                <span><i className="empty" />Not entered</span>
+                <span><i className="valid" />Valid</span>
+                <span><i className="invalid" />Check value; use “Mark OK” to confirm</span>
+                <span><i className="target" />Plan / target</span>
+              </div>
               <div className="matrix-scroll" ref={matrixScrollRef}>
                 <MatrixTable
                   groups={reportGroups}
@@ -1489,6 +1658,7 @@ export default function DailyReport({ session, onSignOut }) {
                   busy={busy}
                   loading={loading}
                   lockedUploadTypes={lockedUploadTypes}
+                  onValidationOverride={setValidationOverride}
                 />
               </div>
 
@@ -1525,7 +1695,7 @@ function AddModelSelect({ models, onSelect, disabled }) {
   return <label className="add-model-control"><Plus size={13} /><select value="" onChange={(e) => onSelect(e.target.value)} disabled={disabled}><option value="">Add model</option>{models.map((model) => <option key={model.modelId} value={model.modelId}>{model.modelName}</option>)}</select></label>;
 }
 
-function MatrixTable({ groups, lines, lineData, onChange, onAddModel, onRemoveModel, onDeleteDraft, onToggleLine, busy, loading, lockedUploadTypes }) {
+function MatrixTable({ groups, lines, lineData, onChange, onAddModel, onRemoveModel, onDeleteDraft, onToggleLine, busy, loading, lockedUploadTypes, onValidationOverride }) {
   const columns = lines.flatMap((line) => {
     const entries = lineData[line.lineId]?.entries || [];
     return entries.length
@@ -1596,13 +1766,13 @@ function MatrixTable({ groups, lines, lineData, onChange, onAddModel, onRemoveMo
     </thead>
     <tbody>
       {groups.map((group) => (
-        <MatrixGroup key={group.title} group={group} columns={columns} lineData={lineData} onChange={onChange} lockedUploadTypes={lockedUploadTypes} />
+        <MatrixGroup key={group.title} group={group} columns={columns} lineData={lineData} onChange={onChange} lockedUploadTypes={lockedUploadTypes} onValidationOverride={onValidationOverride} />
       ))}
     </tbody>
   </table>;
 }
 
-function MatrixGroup({ group, columns, lineData, onChange, lockedUploadTypes }) {
+function MatrixGroup({ group, columns, lineData, onChange, lockedUploadTypes, onValidationOverride }) {
   return <>
     <tr className="group-row">
       <th className="sticky-col group-label">{group.title}</th>
@@ -1619,11 +1789,27 @@ function MatrixGroup({ group, columns, lineData, onChange, lockedUploadTypes }) 
                 || entry.status === "APPROVED"
                 || entry.status === "SUBMITTED"
                 || lineData[lineId]?.isActive === false;
-              return <label className={`matrix-value-field ${key === "issueDescription" ? "matrix-value-wide" : ""} ${entry.annotations?.some((item) => item.fieldKey === key && item.severity === "RED" && !item.resolvedAt) ? "review-field-red" : ""} ${entry.annotations?.some((item) => item.fieldKey === key && item.severity === "YELLOW" && !item.resolvedAt) ? "review-field-yellow" : ""}`} key={key}>
+              const validation = getFieldValidation(entry.form, key);
+              const validationAccepted = Boolean(entry.validationOverrides?.[key]);
+              const validationClass = validationAccepted ? "validation-accepted" : `validation-${validation.status}`;
+              return <label className={`matrix-value-field ${key === "issueDescription" ? "matrix-value-wide" : ""} ${validationClass} ${entry.annotations?.some((item) => item.fieldKey === key && item.severity === "RED" && !item.resolvedAt) ? "review-field-red" : ""} ${entry.annotations?.some((item) => item.fieldKey === key && item.severity === "YELLOW" && !item.resolvedAt) ? "review-field-yellow" : ""}`} key={key}>
                 <span>{label}</span>
                 {key === "issueDescription"
                   ? <textarea aria-label={`${row.label} ${label}`} value={entry.form?.[key] ?? ""} disabled={disabled} placeholder="Issue / observation" onChange={(event) => onChange(lineId, entry.entryId, key, event.target.value)} />
-                  : <input aria-label={`${row.label} ${label}`} type="number" min="0" step="0.01" value={entry.form?.[key] ?? ""} disabled={disabled} placeholder="—" onChange={(event) => onChange(lineId, entry.entryId, key, event.target.value)} />}
+                  : <input aria-label={`${row.label} ${label}`} type="text" inputMode="decimal" autoComplete="off" aria-invalid={!validationAccepted && validation.status === "invalid"} title={!validationAccepted && validation.status === "invalid" ? validation.message : undefined} value={entry.form?.[key] ?? ""} disabled={disabled} placeholder="Number, N/P or N/A" onChange={(event) => onChange(lineId, entry.entryId, key, event.target.value.toUpperCase())} />}
+                {validation.status === "invalid" && (
+                  <small className={`validation-feedback ${validationAccepted ? "accepted" : "invalid"}`}>
+                    {validationAccepted ? `Marked OK by contributor: ${validation.message}` : validation.message}
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      aria-label={`${validationAccepted ? "Undo OK confirmation for" : "Mark as OK"} ${row.label} ${label}`}
+                      onClick={() => onValidationOverride(lineId, entry.entryId, key, !validationAccepted)}
+                    >
+                      {validationAccepted ? "Undo" : "Mark OK"}
+                    </button>
+                  </small>
+                )}
                 {(entry.annotations || []).filter((annotation) => annotation.fieldKey === key && !annotation.resolvedAt).map((annotation) => <small className={`review-field-note ${annotation.severity.toLowerCase()}`} key={annotation.annotationId}><strong>{annotation.severity === "RED" ? "Required correction" : "Verify / clarify"}:</strong> {annotation.comment}</small>)}
                 {(entry.annotations || []).filter((annotation) => annotation.fieldKey === key && annotation.resolvedAt).length > 0 && <details className="review-field-history"><summary>Previous review ({entry.annotations.filter((annotation) => annotation.fieldKey === key && annotation.resolvedAt).length})</summary>{entry.annotations.filter((annotation) => annotation.fieldKey === key && annotation.resolvedAt).map((annotation) => <small key={annotation.annotationId}>{annotation.severity}: {annotation.comment} · submitted value: {annotation.correctedValue ?? "unchanged"}</small>)}</details>}
               </label>;

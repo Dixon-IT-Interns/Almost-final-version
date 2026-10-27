@@ -93,7 +93,7 @@ public sealed class ContributorController(SqlConnectionFactory connectionFactory
         days = Math.Clamp(days, 7, 180);
         await using var connection = await connectionFactory.OpenAsync(cancellationToken);
         const string sql = """
-            SELECT TOP (250) dr.DailyReportId,dr.ReportDate,c.CustomerName,cat.CategoryName,pl.LineName,pl.SAPLocation,
+            SELECT TOP (250) dr.DailyReportId,dr.ReportDate,c.CustomerId,cat.CategoryId,c.CustomerName,cat.CategoryName,pl.LineName,pl.SAPLocation,
                    m.ModelName,dr.Status,dr.SubmittedAt,dr.UpdatedAt,dr.RejectionReason
             FROM DailyReport dr
             INNER JOIN UserCustomer uc ON uc.CustomerId=dr.CustomerId AND uc.UserId=@UserId
@@ -112,7 +112,7 @@ public sealed class ContributorController(SqlConnectionFactory connectionFactory
             """;
         await using var command=new SqlCommand(sql,connection); Add(command,"@UserId",SqlDbType.Int,userId);Add(command,"@PlantId",SqlDbType.Int,plantId);Add(command,"@Days",SqlDbType.Int,days);Add(command,"@Status",SqlDbType.VarChar,string.IsNullOrWhiteSpace(status)?null:status.Trim().ToUpperInvariant());
         var rows=new List<object>(); await using var reader=await command.ExecuteReaderAsync(cancellationToken);
-        while(await reader.ReadAsync(cancellationToken)) rows.Add(new { dailyReportId=reader.GetInt32(0),reportDate=reader.GetDateTime(1).ToString("yyyy-MM-dd"),customerName=reader.GetString(2),categoryName=reader.GetString(3),lineName=reader.GetString(4),sapLocation=reader.IsDBNull(5)?null:reader.GetString(5),modelName=reader.IsDBNull(6)?null:reader.GetString(6),status=reader.GetString(7),submittedAt=reader.IsDBNull(8)?(DateTime?)null:reader.GetDateTime(8),updatedAt=reader.IsDBNull(9)?(DateTime?)null:reader.GetDateTime(9),rejectionReason=reader.IsDBNull(10)?null:reader.GetString(10) });
+        while(await reader.ReadAsync(cancellationToken)) rows.Add(new { dailyReportId=reader.GetInt32(0),reportDate=reader.GetDateTime(1).ToString("yyyy-MM-dd"),customerId=reader.GetInt32(2),categoryId=reader.GetInt32(3),customerName=reader.GetString(4),categoryName=reader.GetString(5),lineName=reader.GetString(6),sapLocation=reader.IsDBNull(7)?null:reader.GetString(7),modelName=reader.IsDBNull(8)?null:reader.GetString(8),status=reader.GetString(9),submittedAt=reader.IsDBNull(10)?(DateTime?)null:reader.GetDateTime(10),updatedAt=reader.IsDBNull(11)?(DateTime?)null:reader.GetDateTime(11),rejectionReason=reader.IsDBNull(12)?null:reader.GetString(12) });
         return Ok(rows);
     }
 

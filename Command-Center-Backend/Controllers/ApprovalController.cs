@@ -1,5 +1,6 @@
 using System.Data;
 using System.Security.Claims;
+using System.Text.Json;
 using Dixon.CommandCenter.API.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -391,7 +392,10 @@ public sealed class ApprovalController(
 
                 dr.UPPHTarget,
                 dr.OSDTarget,
-                dr.OTTarget
+                dr.OTTarget,
+                dr.wip_lying_greater_3_days,
+                dr.wip_lying_greater_7_days,
+                dr.TextValuesJson
 
             FROM ApprovalQueue aq
 
@@ -542,6 +546,12 @@ public sealed class ApprovalController(
 
                 issueDescription =
                     GetString(reader, 41),
+                wipLyingGreater3Days =
+                    GetDecimal(reader, 45),
+                wipLyingGreater7Days =
+                    GetDecimal(reader, 46),
+                textValues =
+                    ParseTextValues(reader.IsDBNull(47) ? null : reader.GetString(47)),
 
                 plan = new
                 {
@@ -580,7 +590,8 @@ public sealed class ApprovalController(
                    dr.OSDMTDValue, dr.OSDMTDPercent, dr.PlannedOTManhours, dr.UnplannedOTManhours,
                    dr.ActualOTManhours, dr.OpenWOQty, dr.Over7DaysWOBalanceQty, dr.DailyTRCInQty,
                    dr.DailyTRCOutQty, dr.TRCOverallFailureInflowPercent, dr.TRCLyingOver3DaysCr,
-                   dr.IssueDescription, dr.RejectionReason
+                   dr.IssueDescription, dr.RejectionReason, dr.UPPHInstalled, dr.OSDTarget, dr.OTTarget,
+                   dr.wip_lying_greater_3_days, dr.wip_lying_greater_7_days, dr.TextValuesJson
             FROM DailyReport dr
             INNER JOIN ApprovalQueue aq ON aq.DailyReportId=dr.DailyReportId
             INNER JOIN Customer c ON c.CustomerId=dr.CustomerId
@@ -612,7 +623,10 @@ public sealed class ApprovalController(
                     osdReportingDateValue=GetDecimal(reader,27), osdReportingDatePercent=GetDecimal(reader,28), osdMtdValue=GetDecimal(reader,29), osdMtdPercent=GetDecimal(reader,30),
                     plannedOTManhours=GetDecimal(reader,31), unplannedOTManhours=GetDecimal(reader,32), actualOTManhours=GetDecimal(reader,33),
                     openWOQty=GetInt(reader,34), over7DaysWOBalanceQty=GetInt(reader,35), dailyTRCInQty=GetInt(reader,36), dailyTRCOutQty=GetInt(reader,37),
-                    trcOverallFailureInflowPercent=GetDecimal(reader,38), trcLyingOver3DaysCr=GetDecimal(reader,39), issueDescription=GetString(reader,40), rejectionReason=GetString(reader,41)
+                    trcOverallFailureInflowPercent=GetDecimal(reader,38), trcLyingOver3DaysCr=GetDecimal(reader,39), issueDescription=GetString(reader,40), rejectionReason=GetString(reader,41),
+                    upphInstalled=GetDecimal(reader,42), osdTarget=GetDecimal(reader,43), otTarget=GetDecimal(reader,44),
+                    wipLyingGreater3Days=GetInt(reader,45), wipLyingGreater7Days=GetInt(reader,46),
+                    textValues=ParseTextValues(reader.IsDBNull(47)?null:reader.GetString(47))
                 }
             });
         }
@@ -738,6 +752,7 @@ public sealed class ApprovalController(
         ["rtyTarget"]="RTYTarget",["rtyActual"]="RTYActual",["osdTarget"]="OSDTarget",["osdReportingDateValue"]="OSDReportingDateValue",["osdReportingDatePercent"]="OSDReportingDatePercent",
         ["osdMtdValue"]="OSDMTDValue",["osdMtdPercent"]="OSDMTDPercent",["otTarget"]="OTTarget",["plannedOTManhours"]="PlannedOTManhours",["unplannedOTManhours"]="UnplannedOTManhours",
         ["actualOTManhours"]="ActualOTManhours",["openWOQty"]="OpenWOQty",["over7DaysWOBalanceQty"]="Over7DaysWOBalanceQty",["dailyTRCInQty"]="DailyTRCInQty",["dailyTRCOutQty"]="DailyTRCOutQty",
+        ["wipLyingGreater3Days"]="wip_lying_greater_3_days",["wipLyingGreater7Days"]="wip_lying_greater_7_days",
         ["trcOverallFailureInflowPercent"]="TRCOverallFailureInflowPercent",["trcLyingOver3DaysCr"]="TRCLyingOver3DaysCr",["issueDescription"]="IssueDescription"
     };
     private sealed class FieldAnnotationKeyComparer : IEqualityComparer<(int,string)>
@@ -1219,6 +1234,7 @@ public sealed class ApprovalController(
                     TRCLyingOver3DaysCr = dr.TRCLyingOver3DaysCr,
 
                     IssueDescription = dr.IssueDescription,
+                    TextValuesJson = dr.TextValuesJson,
                     UpdatedAt = SYSUTCDATETIME()
 
                 FROM KPI_Daily kd
@@ -1281,6 +1297,7 @@ public sealed class ApprovalController(
                     TRCLyingOver3DaysCr,
 
                     IssueDescription,
+                    TextValuesJson,
                     CreatedAt,
                     UpdatedAt
                 )
@@ -1336,6 +1353,7 @@ public sealed class ApprovalController(
                     dr.TRCLyingOver3DaysCr,
 
                     dr.IssueDescription,
+                    dr.TextValuesJson,
                     SYSUTCDATETIME(),
                     SYSUTCDATETIME()
 
@@ -1416,6 +1434,17 @@ public sealed class ApprovalController(
             ? null
             : Convert.ToInt32(
                 reader.GetValue(index));
+    }
+
+    private static IReadOnlyDictionary<string, string> ParseTextValues(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new Dictionary<string, string>();
+
+        var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+        return parsed is null
+            ? new Dictionary<string, string>()
+            : new Dictionary<string, string>(parsed, StringComparer.OrdinalIgnoreCase);
     }
 
 
