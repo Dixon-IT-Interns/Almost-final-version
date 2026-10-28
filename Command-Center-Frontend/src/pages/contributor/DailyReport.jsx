@@ -949,7 +949,7 @@ export default function DailyReport({ session, onSignOut }) {
 
   const submitDateReport = async () => {
     const activeLines = lines.filter((line) => lineData[line.lineId]?.isActive !== false);
-    if (!activeLines.length) {
+    if (!activeLines.length && !isSmtCategory) {
       setError("Activate at least one line before submitting this date's report.");
       return;
     }
@@ -1006,7 +1006,7 @@ export default function DailyReport({ session, onSignOut }) {
         submissionBatchId: batchId,
       });
       await loadReport(false);
-      setNotice(`FATP and SMT reports for ${reportDate} were submitted together for approval.`);
+      setNotice(`Available production reports for ${reportDate} were submitted together for approval.`);
     } catch (e) {
       setError(e.message || "Unable to submit the full date report. Saved drafts are retained.");
     } finally {
@@ -1221,40 +1221,78 @@ export default function DailyReport({ session, onSignOut }) {
         ? [fatpCategory, smtCategory]
         : [category];
       const previews = await Promise.all(importCategories.map(async (targetCategory) => {
+        const targetCategoryId = Number(targetCategory.categoryId);
         const formData = new FormData();
         formData.append("file", file);
         formData.append("customerId", String(customerId));
-        formData.append("categoryId", String(targetCategory.categoryId));
+        formData.append("categoryId", String(targetCategoryId));
         formData.append("reportDate", reportDate);
         formData.append("uploadType", uploadType);
-        const result = await api.postFormData("/daily-reports/import/preview", formData);
-        return [Number(targetCategory.categoryId), result];
+        try {
+          const preview = await api.postFormData("/daily-reports/import/preview", formData);
+          return { categoryId: targetCategoryId, preview };
+        } catch (error) {
+          return { categoryId: targetCategoryId, error };
+        }
       }));
       if (sequence !== loadSequence.current)
         throw new Error("The report context changed while Excel was being read. Please upload the file again.");
 
-      const previewByCategory = new Map(previews);
-      const preview = previewByCategory.get(Number(categoryId));
-      if (!preview) throw new Error("The workbook preview for the selected report category is missing.");
+      const previewByCategory = new Map(previews.map(({ categoryId: targetCategoryId, preview }) => (
+        [targetCategoryId, preview]
+      )));
+      const errorByCategory = new Map(previews.map(({ categoryId: targetCategoryId, error }) => (
+        [targetCategoryId, error]
+      )));
+      const selectedCategoryId = Number(categoryId);
+      const preview = previewByCategory.get(selectedCategoryId);
+      const previewError = errorByCategory.get(selectedCategoryId);
+      if (!preview && !previewError)
+        throw new Error("The workbook preview for the selected report category is missing.");
 
-      for (const [targetCategoryId, result] of previews) {
-        if (targetCategoryId === Number(categoryId)) continue;
+      for (const { categoryId: targetCategoryId, preview: result } of previews) {
+        if (targetCategoryId === selectedCategoryId) continue;
         const targetCategory = reportCategories.find(
           (item) => Number(item.categoryId) === targetCategoryId
         );
         const queueKey = `dcc-production-import:${customerId}:${targetCategoryId}`;
-        sessionStorage.setItem(queueKey, JSON.stringify({
-          customerId: Number(customerId),
-          categoryId: targetCategoryId,
-          categoryName: targetCategory?.categoryName || "Production",
-          queuedProduction: true,
-          preview: result,
-        }));
-        setPendingProductionImport({
-          categoryId: targetCategoryId,
-          categoryName: targetCategory?.categoryName || "other category",
-          reportDate: result.reportDate,
-        });
+        if (result?.valid) {
+          sessionStorage.setItem(queueKey, JSON.stringify({
+            customerId: Number(customerId),
+            categoryId: targetCategoryId,
+            categoryName: targetCategory?.categoryName || "Production",
+            queuedProduction: true,
+            preview: result,
+          }));
+          setPendingProductionImport({
+            categoryId: targetCategoryId,
+            categoryName: targetCategory?.categoryName || "other category",
+            reportDate: result.reportDate,
+          });
+        } else {
+          sessionStorage.removeItem(queueKey);
+          setPendingProductionImport((current) => (
+            current?.categoryId === targetCategoryId ? null : current
+          ));
+        }
+      }
+
+      if (previewError) {
+        const fatpPreview = fatpCategory
+          ? previewByCategory.get(Number(fatpCategory.categoryId))
+          : null;
+        if (uploadType === "production"
+            && !isFATPImport
+            && fatpPreview?.valid
+            && Array.isArray(fatpPreview.rows)
+            && fatpPreview.rows.length > 0) {
+          setNotice(
+            `${previewError.message || "SMT rows could not be loaded."} `
+            + `FATP rows are ready for ${fatpPreview.reportDate}. Open the FATP report to review and apply them.`
+          );
+          return;
+        }
+        throw new Error(previewError.message || "Unable to read the workbook.");
       }
 
       if (isFATPImport) {
@@ -1294,14 +1332,6 @@ export default function DailyReport({ session, onSignOut }) {
 
       stageSmtPreview(preview);
     } catch (e) {
-      const otherCategory = reportCategories.find(
-        (item) => Number(item.categoryId) !== Number(categoryId)
-          && ["FATP", "SMT"].includes(item.categoryName?.trim().toUpperCase())
-      );
-      if (otherCategory) {
-        sessionStorage.removeItem(`dcc-production-import:${customerId}:${otherCategory.categoryId}`);
-        setPendingProductionImport(null);
-      }
       setError(
         e.message?.startsWith("Excel import failed")
           ? e.message
@@ -1745,8 +1775,8 @@ export default function DailyReport({ session, onSignOut }) {
               <div className="matrix-actions date-report-actions">
                 <span>
                   {linesMissingEntries.length
-                    ? `Add at least one model/report to every active line in this category. The final submit also requires complete FATP and SMT drafts for this date.`
-                    : "Save drafts by line in both FATP and SMT. One final submit sends both categories when every active line is reported; inactive lines are excluded."}
+                    ? `Add at least one model/report to every active line in this category. The final submit requires a draft for every active FATP or SMT line; categories with no active lines need no draft.`
+                    : "One final submit sends the available FATP and SMT reports when every active line is reported. Categories with no active lines need no draft."}
                 </span>
                 <div className="action-groups">
                   {lines.map((line) => {
@@ -1759,10 +1789,10 @@ export default function DailyReport({ session, onSignOut }) {
                 </div>
                 <button
                   className="primary-action"
-                  disabled={loading || !reportLoaded || isImporting || Boolean(busy) || Boolean(importPreview) || !activeReportLines.length || linesMissingEntries.length > 0}
+                  disabled={loading || !reportLoaded || isImporting || Boolean(busy) || Boolean(importPreview) || (!activeReportLines.length && !isSmtCategory) || linesMissingEntries.length > 0}
                   onClick={submitDateReport}
                 >
-                  {busy === "submit-date" ? <Loader2 size={14} className="spin" /> : <><Send size={14} /> Submit Full Date Report (FATP + SMT)</>}
+                  {busy === "submit-date" ? <Loader2 size={14} className="spin" /> : <><Send size={14} /> Submit Date Report</>}
                 </button>
               </div>
             </section>

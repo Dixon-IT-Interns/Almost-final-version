@@ -1579,10 +1579,10 @@ public sealed class DailyReportsController(
                 }
             }
 
-            if (!categoryNames.Contains("FATP") || !categoryNames.Contains("SMT"))
+            if (!categoryNames.Contains("FATP"))
             {
                 await transaction.RollbackAsync(cancellationToken);
-                return BadRequest(new { message = "Both active FATP and SMT categories must be configured before submitting the full date report." });
+                return BadRequest(new { message = "An active FATP category must be configured before submitting the date report." });
             }
 
             const string batchScopeSql = """
@@ -1726,7 +1726,7 @@ public sealed class DailyReportsController(
                 await transaction.CommitAsync(cancellationToken);
                 return Ok(new
                 {
-                    message = "FATP and SMT reports for the date were already submitted together.",
+                    message = "The available FATP and SMT reports for the date were already submitted together.",
                     reportDate = request.ReportDate.ToString("yyyy-MM-dd"),
                     submissionBatchId = request.SubmissionBatchId,
                     submittedReports = submittedIds.Count,
@@ -1756,7 +1756,7 @@ public sealed class DailyReportsController(
             await transaction.CommitAsync(cancellationToken);
             return Ok(new
             {
-                message = "FATP and SMT reports for the date were submitted together.",
+                message = "The available FATP and SMT reports for the date were submitted together.",
                 reportDate = request.ReportDate.ToString("yyyy-MM-dd"),
                 submissionBatchId = request.SubmissionBatchId,
                 submittedReports = submittedIds.Count,
