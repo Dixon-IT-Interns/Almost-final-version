@@ -219,7 +219,7 @@ export default function ViewerDashboard({ session, onSignOut }) {
                 <th>UPH Target</th><th>UPH Actual</th><th>UPPH Installed</th><th>UPPH / CPH Actual</th>
                 <th>FPY Target</th><th>FPY Actual</th><th>FTY Target</th><th>FTY Actual</th><th>RTY Target</th><th>RTY Actual</th>
                 <th>OS&amp;D Reporting Date Value</th><th>OS&amp;D Reporting Date %</th><th>OS&amp;D MTD Value</th><th>OS&amp;D MTD %</th><th>OS&amp;D Target</th>
-                <th>Actual OT</th><th>Planned OT</th><th>Unplanned OT</th><th>OT Target</th><th>Open WO Qty</th><th>&gt;7 Days WO</th><th>WIP &gt;3 Days</th><th>WIP &gt;7 Days</th>
+                <th>Actual OT</th><th>Planned OT</th><th>Unplanned OT</th><th>OT Target</th><th>Open WO Qty</th><th>&gt;7 Days WO</th>
                 <th>Daily TRC In</th><th>Daily TRC Out</th><th>TRC Overall Failure %</th><th>TRC Lying &gt;3 Days</th><th>Issue Description</th>
               </tr>
             </thead>
@@ -232,7 +232,7 @@ export default function ViewerDashboard({ session, onSignOut }) {
               <td>{metric(line.fpyTarget, true, line.textValues?.fpyTarget)}</td><td>{metric(line.fpyActual, true, line.textValues?.fpyActual)}</td><td>{metric(line.ftyTarget, true, line.textValues?.ftyTarget)}</td><td>{metric(line.ftyActual, true, line.textValues?.ftyActual)}</td><td>{metric(line.rtyTarget, true, line.textValues?.rtyTarget)}</td><td>{metric(line.rtyActual, true, line.textValues?.rtyActual)}</td>
               <td>{metric(line.osdReportingDateValue, false, line.textValues?.osdReportingDateValue)}</td><td>{metric(line.osdReportingDatePercent, true, line.textValues?.osdReportingDatePercent)}</td><td>{metric(line.osdMtdValue, false, line.textValues?.osdMtdValue)}</td><td>{metric(line.osdMtdPercent, true, line.textValues?.osdMtdPercent)}</td><td>{metric(line.osdTarget, false, line.textValues?.osdTarget)}</td>
               <td>{metric(line.actualOTManhours, false, line.textValues?.actualOTManhours)}</td><td>{metric(line.plannedOTManhours, false, line.textValues?.plannedOTManhours)}</td><td>{metric(line.unplannedOTManhours, false, line.textValues?.unplannedOTManhours)}</td><td>{metric(line.otTarget, false, line.textValues?.otTarget)}</td>
-              <td>{metric(line.openWOQty, false, line.textValues?.openWOQty)}</td><td>{metric(line.over7DaysWOBalanceQty, false, line.textValues?.over7DaysWOBalanceQty)}</td><td>{metric(line.wipLyingGreater3Days, false, line.textValues?.wipLyingGreater3Days)}</td><td>{metric(line.wipLyingGreater7Days, false, line.textValues?.wipLyingGreater7Days)}</td><td>{metric(line.dailyTRCInQty, false, line.textValues?.dailyTRCInQty)}</td><td>{metric(line.dailyTRCOutQty, false, line.textValues?.dailyTRCOutQty)}</td>
+              <td>{metric(line.openWOQty, false, line.textValues?.openWOQty)}</td><td>{metric(line.over7DaysWOBalanceQty, false, line.textValues?.over7DaysWOBalanceQty)}</td><td>{metric(line.dailyTRCInQty, false, line.textValues?.dailyTRCInQty)}</td><td>{metric(line.dailyTRCOutQty, false, line.textValues?.dailyTRCOutQty)}</td>
               <td>{metric(line.trcOverallFailureInflowPercent, true, line.textValues?.trcOverallFailureInflowPercent)}</td><td>{metric(line.trcLyingOver3DaysCr, false, line.textValues?.trcLyingOver3DaysCr)}</td>
               <td className="issue-cell" title={line.issueDescription || ""}>{line.issueDescription || "—"}</td>
             </tr>)}</tbody>

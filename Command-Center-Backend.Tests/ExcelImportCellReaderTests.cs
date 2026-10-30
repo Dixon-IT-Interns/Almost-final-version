@@ -6,6 +6,27 @@ namespace Dixon.CommandCenter.API.Tests;
 
 public sealed class ExcelImportCellReaderTests
 {
+    [Theory]
+    [InlineData("Open WO\n(Qty)", "Open WO (Qty)")]
+    [InlineData(">7 Days WO\n(Qty)", ">7 Days WO (Qty)")]
+    [InlineData(">7 Days WO\n(Sum of Bal Qty)", ">7 Days WO (Qty)|>7 Days WO (Sum of Bal Qty)")]
+    public void FindsOperationalColumnsAcrossWorkbookHeaderVariants(
+        string sourceHeader,
+        string expectedHeaders)
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.AddWorksheet("Production");
+        worksheet.Cell("A1").Value = sourceHeader;
+
+        var matchingColumn = DailyReportExcelImportService.FindOperationalColumn(
+            worksheet,
+            1,
+            1,
+            expectedHeaders.Split('|'));
+
+        Assert.Equal(1, matchingColumn);
+    }
+
     [Fact]
     public void ReadsMergedValueForEveryCellInsideMergedRange()
     {
@@ -67,6 +88,31 @@ public sealed class ExcelImportCellReaderTests
         Assert.Equal(decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture), value);
     }
 
+    [Theory]
+    [InlineData("upphInstalled", 0.289855072463768, 0.29)]
+    [InlineData("upphActual", 0.242101171636404, 0.24)]
+    [InlineData("upphActual", 0.00523560209424084, 0.01)]
+    [InlineData("productionActual", 0.289855072463768, 0.289855072463768)]
+    public void RoundsOnlyUpphValuesToTwoDecimalPlaces(
+        string field,
+        double source,
+        decimal expected)
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.AddWorksheet("Production");
+        var cell = worksheet.Cell("A1");
+        cell.Value = source;
+
+        Assert.True(DailyReportExcelImportService.TryReadImportNumber(
+            cell,
+            field,
+            out var value,
+            out var nonNumericValue));
+
+        Assert.Equal(expected, value);
+        Assert.Null(nonNumericValue);
+    }
+
     [Fact]
     public void PreservesUnderlyingPercentageValueWithoutScaling()
     {
@@ -79,6 +125,24 @@ public sealed class ExcelImportCellReaderTests
         Assert.True(ExcelImportCellReader.TryReadNumber(cell, out var value));
 
         Assert.Equal(0.985m, value);
+    }
+
+    [Theory]
+    [InlineData(0.985, 98.5)]
+    [InlineData(0.29, 29)]
+    public void ScalesPercentageValueToWholePercent(double source, decimal expected)
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.AddWorksheet("Quality");
+        worksheet.Cell("A1").Value = source;
+
+        Assert.True(ExcelImportCellReader.TryReadPercentageOrStatus(
+            worksheet.Cell("A1"),
+            out var value,
+            out var nonNumericValue));
+
+        Assert.Equal(expected, value);
+        Assert.Null(nonNumericValue);
     }
 
     [Fact]

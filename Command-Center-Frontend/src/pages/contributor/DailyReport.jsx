@@ -25,7 +25,6 @@ const EMPTY_FORM = {
   otTarget: "",
   plannedOTManhours: null, unplannedOTManhours: null, actualOTManhours: "",
   openWOQty: "", over7DaysWOBalanceQty: "",
-  wipLyingGreater3Days: "", wipLyingGreater7Days: "",
   dailyTRCInQty: "", dailyTRCOutQty: "",
   trcOverallFailureInflowPercent: "", trcLyingOver3DaysCr: "",
   issueDescription: "",
@@ -67,8 +66,6 @@ const GROUPS = [
       ] },
       { label: "Open WO (Qty)", fields: [{ key: "openWOQty", label: "Value" }] },
       { label: ">7 Days WO (Qty)", fields: [{ key: "over7DaysWOBalanceQty", label: "Value" }] },
-      { label: "WIP Lying >3 Days (Cr)", fields: [{ key: "wipLyingGreater3Days", label: "Value" }] },
-      { label: "WIP Lying >7 Days (Cr)", fields: [{ key: "wipLyingGreater7Days", label: "Value" }] },
     ],
   },
   {
@@ -100,7 +97,6 @@ const PERCENTAGE_FIELDS = new Set([
 
 const INTEGER_FIELDS = new Set([
   "openWOQty", "over7DaysWOBalanceQty", "dailyTRCInQty", "dailyTRCOutQty",
-  "wipLyingGreater3Days", "wipLyingGreater7Days",
 ]);
 
 const NUMERIC_FIELDS = new Set([
@@ -110,8 +106,7 @@ const NUMERIC_FIELDS = new Set([
   "rtyTarget", "rtyActual", "osdTarget", "osdReportingDateValue",
   "osdReportingDatePercent", "osdMtdValue", "osdMtdPercent", "otTarget",
   "plannedOTManhours", "unplannedOTManhours", "actualOTManhours",
-  "openWOQty", "over7DaysWOBalanceQty", "wipLyingGreater3Days",
-  "wipLyingGreater7Days", "dailyTRCInQty", "dailyTRCOutQty",
+  "openWOQty", "over7DaysWOBalanceQty", "dailyTRCInQty", "dailyTRCOutQty",
   "trcOverallFailureInflowPercent", "trcLyingOver3DaysCr",
 ]);
 
@@ -187,7 +182,16 @@ const UPLOAD_TYPES = [
 
 const UPLOAD_FIELD_KEYS = {
   ie: ["cphTarget", "cphActual"],
-  production: ["monthPlan", "monthActual", "productionPlan", "productionActual", "uphTarget", "uphActual", "upphInstalled", "upphActual", "cphTarget", "cphActual", "osdReportingDateValue", "osdReportingDatePercent", "osdMtdValue", "osdMtdPercent", "issueDescription"],
+  production: [
+    "monthPlan", "monthActual", "productionPlan", "productionActual",
+    "uphTarget", "uphActual", "upphInstalled", "upphActual", "cphTarget", "cphActual",
+    "fpyTarget", "fpyActual", "ftyTarget", "ftyActual", "rtyTarget", "rtyActual",
+    "osdReportingDateValue", "osdReportingDatePercent", "osdMtdValue", "osdMtdPercent",
+    "plannedOTManhours", "unplannedOTManhours", "actualOTManhours",
+    "openWOQty", "over7DaysWOBalanceQty",
+    "dailyTRCInQty", "dailyTRCOutQty", "trcOverallFailureInflowPercent", "trcLyingOver3DaysCr",
+    "issueDescription",
+  ],
   quality: ["fpyTarget", "fpyActual", "ftyTarget", "ftyActual", "rtyTarget", "rtyActual"],
   trc: ["dailyTRCInQty", "dailyTRCOutQty", "trcOverallFailureInflowPercent", "trcLyingOver3DaysCr"],
   woClosure: [],
@@ -197,7 +201,6 @@ const UPLOAD_LOCK_FIELD_KEYS = {
   ...UPLOAD_FIELD_KEYS,
   woClosure: [
     "openWOQty", "over7DaysWOBalanceQty",
-    "wipLyingGreater3Days", "wipLyingGreater7Days",
   ],
 };
 
@@ -244,7 +247,6 @@ const FATP_IMPORT_PREVIEW_FIELDS = [
   ["OS&D Reporting Date %", "osdReportingDatePercent"],
   ["OS&D MTD", "osdMtdValue"], ["OS&D MTD %", "osdMtdPercent"],
   ["Open WO Qty", "openWOQty"], [">7 Days WO Qty", "over7DaysWOBalanceQty"],
-  ["WIP Lying >3 Days", "wipLyingGreater3Days"], ["WIP Lying >7 Days", "wipLyingGreater7Days"],
   ["Issue", "issueDescription"],
 ];
 
@@ -348,22 +350,9 @@ export default function DailyReport({ session, onSignOut }) {
   const reportGroups = useMemo(() => GROUPS
     .filter((group) => uploadType === "all"
       || (uploadType === "ie" && group.title === "Production")
-      || (uploadType === "production" && ["Production", "Operations"].includes(group.title))
+      || (uploadType === "production" && ["Production", "Quality", "Operations", "TRC", "Issue"].includes(group.title))
       || groupUploadType(group.title) === uploadType)
     .map((group) => {
-      if (group.title === "Operations" && uploadType === "production") {
-        const operationalOnlyFields = new Set([
-          "openWOQty",
-          "over7DaysWOBalanceQty",
-          "wipLyingGreater3Days",
-          "wipLyingGreater7Days",
-        ]);
-        return {
-          ...group,
-          rows: group.rows.filter((row) => !row.fields.some(({ key }) => operationalOnlyFields.has(key))),
-        };
-      }
-
       if (group.title === "Operations" && uploadType === "woClosure") {
         const nonWoFields = new Set([
           "osdReportingDateValue",
@@ -843,7 +832,15 @@ export default function DailyReport({ session, onSignOut }) {
     }
   };
 
-  const buildPayload = (lineId, entry, submissionBatchId = null) => ({
+  const buildPayload = (lineId, entry, submissionBatchId = null) => {
+    const plannedOTManhours = asNumber(entry.form.plannedOTManhours);
+    const unplannedOTManhours = asNumber(entry.form.unplannedOTManhours);
+    const actualOTManhours = asNumber(entry.form.actualOTManhours)
+      ?? (plannedOTManhours !== null || unplannedOTManhours !== null
+        ? (plannedOTManhours ?? 0) + (unplannedOTManhours ?? 0)
+        : null);
+
+    return {
     reportDate,
     submissionBatchId,
     nonNumericValues: Object.fromEntries([...NUMERIC_FIELDS]
@@ -873,13 +870,13 @@ export default function DailyReport({ session, onSignOut }) {
     osdReportingDateValue: asNumber(entry.form.osdReportingDateValue), osdReportingDatePercent: asNumber(entry.form.osdReportingDatePercent),
     osdMtdValue: asNumber(entry.form.osdMtdValue), osdMtdPercent: asNumber(entry.form.osdMtdPercent),
     otTarget: asNumber(entry.form.otTarget),
-    plannedOTManhours: asNumber(entry.form.plannedOTManhours), unplannedOTManhours: asNumber(entry.form.unplannedOTManhours),
-    actualOTManhours: asNumber(entry.form.actualOTManhours), openWOQty: asInteger(entry.form.openWOQty),
+    plannedOTManhours, unplannedOTManhours,
+    actualOTManhours, openWOQty: asInteger(entry.form.openWOQty),
     over7DaysWOBalanceQty: asInteger(entry.form.over7DaysWOBalanceQty), dailyTRCInQty: asInteger(entry.form.dailyTRCInQty),
-    wipLyingGreater3Days: asInteger(entry.form.wipLyingGreater3Days), wipLyingGreater7Days: asInteger(entry.form.wipLyingGreater7Days),
     dailyTRCOutQty: asInteger(entry.form.dailyTRCOutQty), trcOverallFailureInflowPercent: asNumber(entry.form.trcOverallFailureInflowPercent),
     trcLyingOver3DaysCr: asNumber(entry.form.trcLyingOver3DaysCr), issueDescription: entry.form.issueDescription?.trim() || null,
-  });
+    };
+  };
 
   const validateLine = (lineId) => {
     const line = lineData[lineId];
@@ -1014,137 +1011,53 @@ export default function DailyReport({ session, onSignOut }) {
     }
   };
 
-  function stageSmtPreview(preview) {
+  function prepareSmtReviewPreview(preview, queuedProduction = false, queuedPreview = false) {
     const pageLines = new Map(lines.map((line) => [Number(line.lineId), line]));
-    const validationErrors = [];
-
-    for (const imported of preview.data || []) {
-      const line = pageLines.get(Number(imported.lineId));
-      const lineState = lineData[imported.lineId];
-      if (!line || !lineState) {
-        validationErrors.push(`Line ${imported.lineNo} is not available on this report page.`);
-        continue;
-      }
-
-      const modelAvailable = lineState.models.some(
-        (model) => Number(model.modelId) === Number(imported.modelId)
+    const rows = (preview.data || []).map((imported, index) => {
+      const lineId = Number(imported.lineId);
+      const modelId = Number(imported.modelId);
+      const line = pageLines.get(lineId);
+      const lineState = lineData[lineId];
+      const modelAvailable = lineState?.models.some(
+        (model) => Number(model.modelId) === modelId
       );
-      if (!modelAvailable) {
-        validationErrors.push(
-          `Model ${imported.modelName} is not available for line ${imported.lineNo} on this page.`
-        );
-      }
-
-      const existingEntry = lineState.entries.find(
-        (entry) => Number(entry.modelId) === Number(imported.modelId)
+      const existingEntry = lineState?.entries.find(
+        (entry) => Number(entry.modelId) === modelId
       );
-      if (existingEntry?.status === "APPROVED" || existingEntry?.status === "SUBMITTED") {
-        validationErrors.push(
-          `Model ${imported.modelName} on line ${imported.lineNo} has already been submitted and cannot be replaced.`
-        );
-      }
-    }
+      const locked = ["APPROVED", "SUBMITTED"].includes(existingEntry?.status);
+      const matched = Boolean(line && line.isActive !== false && modelAvailable);
 
-    if (validationErrors.length) throw new Error(validationErrors.join(" "));
-
-    const importedNewModels = (preview.data || []).filter((imported) => (
-      !lineData[imported.lineId]?.entries.some(
-        (entry) => Number(entry.modelId) === Number(imported.modelId)
-      )
-    ));
-    const importedEntryIds = new Map(importedNewModels.map((imported) => [
-      `${imported.lineId}:${imported.modelId}`,
-      `import-${imported.lineId}-${imported.modelId}-${++entryIdSequence.current}`,
-    ]));
-
-    setLineData((current) => {
-      const next = { ...current };
-      const grouped = new Map();
-
-      for (const imported of preview.data || []) {
-        const lineId = Number(imported.lineId);
-        const entries = grouped.get(lineId) || [];
-        entries.push(imported);
-        grouped.set(lineId, entries);
-      }
-
-      for (const [lineId, importedEntries] of grouped) {
-        const currentLine = next[lineId];
-        const entries = [...currentLine.entries];
-
-        for (const imported of importedEntries) {
-          const existingIndex = entries.findIndex(
-            (entry) => Number(entry.modelId) === Number(imported.modelId)
-          );
-          if (existingIndex >= 0) {
-            const existing = entries[existingIndex];
-            const presentFields = new Set(imported.form?.presentFields || Object.keys(imported.form || {}));
-            const formValues = filterImportedForm(
-              Object.fromEntries(Object.entries(imported.form || {}).filter(([field]) => presentFields.has(field) || field === "nonNumericValues")),
-              uploadType
-            );
-            const editedFields = new Set(existing.planEditedFields || []);
-            for (const field of KPI_PLAN_FIELDS) {
-              if (formValues[field] === null || formValues[field] === undefined || formValues[field] === "")
-                delete formValues[field];
-              else if (NON_NUMERIC_MARKERS.has(String(formValues[field]).trim().toUpperCase()))
-                editedFields.delete(field);
-              else if (asNumber(formValues[field]) === asNumber(existing.initialForm?.[field]))
-                editedFields.delete(field);
-              else
-                editedFields.add(field);
-            }
-            entries[existingIndex] = {
-              ...existing,
-              form: { ...existing.form, ...formValues },
-              status: "DRAFT",
-              planEditedFields: [...editedFields],
-              validationOverrides: clearValidationOverrides(
-                existing.validationOverrides,
-                Object.keys(formValues)
-              ),
-            }
-          } else {
-            const presentFields = new Set(imported.form?.presentFields || Object.keys(imported.form || {}));
-            const importedForm = filterImportedForm(
-              Object.fromEntries(Object.entries(imported.form || {}).filter(([field]) => presentFields.has(field) || field === "nonNumericValues")),
-              uploadType
-            );
-            const form = { ...EMPTY_FORM, ...importedForm };
-            entries.push({
-              entryId: importedEntryIds.get(`${lineId}:${imported.modelId}`),
-              dailyReportId: null,
-              modelId: String(imported.modelId),
-              modelName: imported.modelName,
-              status: "DRAFT",
-              isActive: true,
-              rejectionReason: "",
-              form,
-              initialForm: { ...EMPTY_FORM },
-              isNew: true,
-              plan: null,
-              planStatus: "not-applicable",
-              planError: "",
-              planEditedFields: [],
-            });
-          }
-        }
-
-        next[lineId] = { ...currentLine, status: "IN_PROGRESS", entries };
-      }
-
-      return next;
+      return {
+        rowNumber: imported.rowNumber || index + 1,
+        lineNo: imported.lineNo || line?.lineName || "",
+        sapLocation: imported.sapLocation || line?.sapLocation || null,
+        customer: customer?.customerName || "",
+        modelName: imported.modelName,
+        status: matched ? "matched" : "unmatched",
+        reason: !line
+          ? `Line ${imported.lineNo} is not available on this report page.`
+          : !modelAvailable
+            ? `Model ${imported.modelName} is not available for line ${imported.lineNo}.`
+            : line.isActive === false
+              ? `Line ${imported.lineNo} is inactive.`
+              : locked
+                ? "This report has already been submitted and cannot be replaced."
+                : null,
+        lineId,
+        mappedLineName: line?.lineName || imported.lineNo,
+        modelId,
+        mappedModelName: imported.modelName,
+        form: imported.form,
+        include: matched && !locked,
+        selectedLineId: line ? String(lineId) : "",
+        selectedModelId: modelAvailable ? String(modelId) : "",
+      };
     });
 
-    const importWarnings = (preview.errors || []).slice(0, 3);
-    const remainingWarnings = Math.max(0, (preview.errors || []).length - importWarnings.length);
-    setNotice(
-      `Excel imported successfully — ${preview.lines} lines, ${preview.models} models. Review the staged values, then save each line as a draft.`
-      + (importWarnings.length
-        ? ` Import notes: ${importWarnings.join(" ")}${remainingWarnings ? ` And ${remainingWarnings} more row/field note(s).` : ""}`
-        : "")
-    );
-  };
+    setImportPreview({ ...preview, queuedProduction, queuedPreview, rows });
+    setImportDateConfirmed(preview.reportDate === reportDate);
+    setNotice("SMT rows are ready to review. Select the rows to apply; nothing has been staged or saved yet.");
+  }
 
   useEffect(() => {
     if (!reportLoaded || importPreview) return;
@@ -1173,6 +1086,7 @@ export default function DailyReport({ session, onSignOut }) {
         setImportPreview({
           ...queued.preview,
           queuedProduction: queued.queuedProduction === true,
+          queuedPreview: true,
           rows: queued.preview.rows.map((row) => ({
             ...row,
             include: row.status === "matched" && !lineData[row.lineId]?.entries?.some(
@@ -1189,8 +1103,7 @@ export default function DailyReport({ session, onSignOut }) {
         setNotice(`FATP rows from the Production workbook are ready for ${queued.preview.reportDate}. Review and apply them; nothing has been saved.`);
       } else {
         try {
-          stageSmtPreview(queued.preview);
-          sessionStorage.removeItem(queueKey);
+          prepareSmtReviewPreview(queued.preview, queued.queuedProduction === true, true);
           if (queued.queuedProduction === true)
             setPendingProductionImport(null);
         } catch (e) {
@@ -1330,7 +1243,7 @@ export default function DailyReport({ session, onSignOut }) {
         return;
       }
 
-      stageSmtPreview(preview);
+      prepareSmtReviewPreview(preview);
     } catch (e) {
       setError(
         e.message?.startsWith("Excel import failed")
@@ -1356,7 +1269,7 @@ export default function DailyReport({ session, onSignOut }) {
     if (!importPreview) return;
     const needsDateConfirmation = importPreview.reportDate !== reportDate;
     if (needsDateConfirmation && !importDateConfirmed) {
-      setError("Confirm the workbook report date before applying the FATP rows.");
+      setError(`Confirm the workbook report date before applying the ${category?.categoryName || "production"} rows.`);
       return;
     }
     if (importPreview.reportDate !== reportDate || loading || !reportLoaded) {
@@ -1366,7 +1279,7 @@ export default function DailyReport({ session, onSignOut }) {
 
     const selected = importPreview.rows.filter((row) => row.include);
     if (!selected.length) {
-      setError("Select at least one matched or manually mapped FATP row to apply.");
+      setError(`Select at least one matched or manually mapped ${category?.categoryName || "production"} row to apply.`);
       return;
     }
 
@@ -1483,17 +1396,21 @@ export default function DailyReport({ session, onSignOut }) {
 
     setImportPreview(null);
     setImportDateConfirmed(false);
-    if (importPreview.queuedProduction) {
+    if (importPreview.queuedPreview) {
       sessionStorage.removeItem(`dcc-production-import:${customerId}:${categoryId}`);
+    }
+    if (importPreview.queuedProduction) {
       setPendingProductionImport(null);
     }
     setError("");
-    setNotice(`Applied ${importedRows.length} reviewed FATP row(s) to the form. Review and save or submit manually.`);
+    setNotice(`Applied ${importedRows.length} reviewed ${category?.categoryName || "production"} row(s) to the form. Review and save or submit manually.`);
   };
 
   const cancelImportPreview = () => {
-    if (importPreview?.queuedProduction) {
+    if (importPreview?.queuedPreview) {
       sessionStorage.removeItem(`dcc-production-import:${customerId}:${categoryId}`);
+    }
+    if (importPreview?.queuedProduction) {
       setPendingProductionImport(null);
     }
     setImportPreview(null);
@@ -1649,7 +1566,7 @@ export default function DailyReport({ session, onSignOut }) {
               {importPreview.reportDate === reportDate && loading && (
                 <div className="excel-date-warning">Loading saved reports and plan data for {reportDate} before these rows can be applied…</div>
               )}
-              <p className="excel-field-note">Production workbook values are staged only for columns present in that workbook; other report sections remain unchanged.</p>
+              <p className="excel-field-note">Workbook values are staged only for columns present in the workbook; other report sections remain unchanged.</p>
               <div className="excel-review-scroll">
                 <table className="excel-review-table">
                   <thead><tr><th>Use</th><th>Source row</th><th>Original Excel values</th><th>Map to active line</th><th>Map to brand model</th><th>Values to stage</th><th>Review status</th></tr></thead>
@@ -1661,7 +1578,6 @@ export default function DailyReport({ session, onSignOut }) {
                       const modelOptions = selectedLine?.models || [];
                       const customerMatches = isUnspecifiedCustomer(row.customer)
                         || normalizeCustomerName(row.customer) === normalizeCustomerName(customer?.customerName);
-                      const canReview = Boolean(row.form) && Boolean(customerMatches);
                       const mappingReady = Boolean(selectedLine)
                         && selectedLine.isActive !== false
                         && modelOptions.some((model) => Number(model.modelId) === Number(row.selectedModelId));
@@ -1669,6 +1585,7 @@ export default function DailyReport({ session, onSignOut }) {
                         (entry) => Number(entry.modelId) === Number(row.selectedModelId)
                           && ["SUBMITTED", "APPROVED"].includes(entry.status)
                       );
+                      const canReview = Boolean(row.form) && Boolean(customerMatches) && !lockedEntry;
                       const statusLabel = lockedEntry
                         ? "Locked report"
                         : row.status === "matched"

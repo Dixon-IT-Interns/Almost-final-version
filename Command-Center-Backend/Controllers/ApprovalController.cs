@@ -457,6 +457,13 @@ public sealed class ApprovalController(
             });
         }
 
+        var plannedOtManhours = GetDecimal(reader, 32);
+        var unplannedOtManhours = GetDecimal(reader, 33);
+        var actualOtManhours = GetDecimal(reader, 34)
+            ?? (plannedOtManhours.HasValue || unplannedOtManhours.HasValue
+                ? (plannedOtManhours ?? 0) + (unplannedOtManhours ?? 0)
+                : null);
+
         return Ok(new
         {
             approvalQueueId = reader.GetInt32(0),
@@ -528,13 +535,13 @@ public sealed class ApprovalController(
                     GetDecimal(reader, 31),
 
                 plannedOTManhours =
-                    GetDecimal(reader, 32),
+                    plannedOtManhours,
 
                 unplannedOTManhours =
-                    GetDecimal(reader, 33),
+                    unplannedOtManhours,
 
                 actualOTManhours =
-                    GetDecimal(reader, 34),
+                    actualOtManhours,
 
                 openWOQty =
                     GetInt(reader, 35),
@@ -621,6 +628,12 @@ public sealed class ApprovalController(
         while (await reader.ReadAsync(cancellationToken))
         {
             var reportId = reader.GetInt32(1);
+            var plannedOtManhours = GetDecimal(reader, 31);
+            var unplannedOtManhours = GetDecimal(reader, 32);
+            var actualOtManhours = GetDecimal(reader, 33)
+                ?? (plannedOtManhours.HasValue || unplannedOtManhours.HasValue
+                    ? (plannedOtManhours ?? 0) + (unplannedOtManhours ?? 0)
+                    : null);
             rows.Add(new {
                 approvalQueueId=reader.GetInt32(0), dailyReportId=reportId, status=reader.GetString(2), submittedAt=reader.GetDateTime(3),
                 reportDate=reader.GetDateTime(4).ToString("yyyy-MM-dd"), customerName=reader.GetString(5), categoryName=reader.GetString(6),
@@ -631,7 +644,7 @@ public sealed class ApprovalController(
                     fpyTarget=GetDecimal(reader,19), fpyActual=GetDecimal(reader,20), ftyTarget=GetDecimal(reader,21), ftyActual=GetDecimal(reader,22),
                     rtyTarget=GetDecimal(reader,23), rtyActual=GetDecimal(reader,24), monthPlan=GetDecimal(reader,25), monthActual=GetDecimal(reader,26),
                     osdReportingDateValue=GetDecimal(reader,27), osdReportingDatePercent=GetDecimal(reader,28), osdMtdValue=GetDecimal(reader,29), osdMtdPercent=GetDecimal(reader,30),
-                    plannedOTManhours=GetDecimal(reader,31), unplannedOTManhours=GetDecimal(reader,32), actualOTManhours=GetDecimal(reader,33),
+                    plannedOTManhours=plannedOtManhours, unplannedOTManhours=unplannedOtManhours, actualOTManhours=actualOtManhours,
                     openWOQty=GetInt(reader,34), over7DaysWOBalanceQty=GetInt(reader,35), dailyTRCInQty=GetInt(reader,36), dailyTRCOutQty=GetInt(reader,37),
                     trcOverallFailureInflowPercent=GetDecimal(reader,38), trcLyingOver3DaysCr=GetDecimal(reader,39), issueDescription=GetString(reader,40), rejectionReason=GetString(reader,41),
                     upphInstalled=GetDecimal(reader,42), osdTarget=GetDecimal(reader,43), otTarget=GetDecimal(reader,44),

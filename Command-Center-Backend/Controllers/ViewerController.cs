@@ -310,18 +310,7 @@ public sealed class ViewerController(
             .Where(line => line.DailyReportId.HasValue && line.Process == process)
             .ToArray();
         var additionalRows = Math.Max(0, reportLines.Length - capacity);
-        const int lastColumn = 35;
-        var extraHeaders = new[]
-        {
-            "OS&D Target", "OT Target", "WIP >3 Days", "WIP >7 Days"
-        };
-        var extraHeaderStyle = sheet.Cell(headerRow + 1, 31).Style;
-        for (var index = 0; index < extraHeaders.Length; index++)
-        {
-            var cell = sheet.Cell(headerRow + 1, 32 + index);
-            cell.Style = extraHeaderStyle;
-            cell.Value = extraHeaders[index];
-        }
+        const int lastColumn = 31;
 
         for (var row = dataStart; row < totalRow; row++)
         {
@@ -369,8 +358,6 @@ public sealed class ViewerController(
         SetTotal(sheet, totalRow, 27, reportLines, line => line.DailyTRCInQty);
         SetTotal(sheet, totalRow, 28, reportLines, line => line.DailyTRCOutQty);
         SetTotal(sheet, totalRow, 30, reportLines, line => line.TRCLyingOver3DaysCr);
-        SetTotal(sheet, totalRow, 34, reportLines, line => line.WIPLyingGreater3Days);
-        SetTotal(sheet, totalRow, 35, reportLines, line => line.WIPLyingGreater7Days);
     }
 
     private static void WriteReportLine(
@@ -381,6 +368,11 @@ public sealed class ViewerController(
     {
         object? Value(string field, object? numericValue) =>
             numericValue ?? (line.TextValues.TryGetValue(field, out var textValue) ? textValue : null);
+        object? Percentage(string field, decimal? numericValue)
+        {
+            var value = Value(field, numericValue);
+            return value is decimal number ? number / 100m : value;
+        }
 
         var values = new object?[]
         {
@@ -390,20 +382,17 @@ public sealed class ViewerController(
             Value("uphTarget", line.UPHTarget), Value("uphActual", line.UPHActual),
             Value(process == "FATP" ? "upphInstalled" : "cphTarget", process == "FATP" ? line.UPPHInstalled : line.CPHTarget),
             Value(process == "FATP" ? "upphActual" : "cphActual", process == "FATP" ? line.UPPHActual : line.CPHActual),
-            Value("fpyTarget", line.FPYTarget), Value("fpyActual", line.FPYActual),
-            Value("ftyTarget", line.FTYTarget), Value("ftyActual", line.FTYActual),
-            Value("rtyTarget", line.RTYTarget), Value("rtyActual", line.RTYActual),
+            Percentage("fpyTarget", line.FPYTarget), Percentage("fpyActual", line.FPYActual),
+            Percentage("ftyTarget", line.FTYTarget), Percentage("ftyActual", line.FTYActual),
+            Percentage("rtyTarget", line.RTYTarget), Percentage("rtyActual", line.RTYActual),
             Value("osdReportingDateValue", line.OSDReportingDateValue),
-            Value("osdReportingDatePercent", line.OSDReportingDatePercent),
-            Value("osdMtdValue", line.OSDMTDValue), Value("osdMtdPercent", line.OSDMTDPercent),
+            Percentage("osdReportingDatePercent", line.OSDReportingDatePercent),
+            Value("osdMtdValue", line.OSDMTDValue), Percentage("osdMtdPercent", line.OSDMTDPercent),
             Value("plannedOTManhours", line.PlannedOTManhours), Value("unplannedOTManhours", line.UnplannedOTManhours),
             Value("openWOQty", line.OpenWOQty), Value("over7DaysWOBalanceQty", line.Over7DaysWOBalanceQty),
             Value("dailyTRCInQty", line.DailyTRCInQty), Value("dailyTRCOutQty", line.DailyTRCOutQty),
-            Value("trcOverallFailureInflowPercent", line.TRCOverallFailureInflowPercent),
-            Value("trcLyingOver3DaysCr", line.TRCLyingOver3DaysCr), line.IssueDescription,
-            Value("osdTarget", line.OSDTarget),
-            Value("otTarget", line.OTTarget), Value("wipLyingGreater3Days", line.WIPLyingGreater3Days),
-            Value("wipLyingGreater7Days", line.WIPLyingGreater7Days)
+            Percentage("trcOverallFailureInflowPercent", line.TRCOverallFailureInflowPercent),
+            Value("trcLyingOver3DaysCr", line.TRCLyingOver3DaysCr), line.IssueDescription
         };
 
         for (var index = 0; index < values.Length; index++)
@@ -423,6 +412,10 @@ public sealed class ViewerController(
 
     private static void ClearTemplateSampleRows(XLWorkbook workbook)
     {
+        var reportSheet = workbook.Worksheet(1);
+        foreach (var picture in reportSheet.Pictures.ToList())
+            picture.Delete();
+
         var qualitySheet = workbook.Worksheet(2);
         qualitySheet.Range("B5:Q8").Clear(XLClearOptions.Contents);
         qualitySheet.Range("I11:O13").Clear(XLClearOptions.Contents);
