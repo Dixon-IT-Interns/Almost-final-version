@@ -391,7 +391,8 @@ public sealed class DailyReportExcelImportService(
                         line.SapLocation,
                         model.Id,
                         model.Name,
-                        values));
+                        values,
+                        rowNumber));
                 }
             }
 
@@ -985,6 +986,37 @@ public sealed class DailyReportExcelImportService(
             rows);
     }
 
+    internal static bool TryReadImportNumber(
+        IXLCell cell,
+        string field,
+        out decimal? value,
+        out string? nonNumericValue)
+    {
+        var isPercentageField = field is "fpyTarget" or "fpyActual"
+            or "ftyTarget" or "ftyActual"
+            or "rtyTarget" or "rtyActual"
+            or "osdReportingDatePercent" or "osdMtdPercent"
+            or "trcOverallFailureInflowPercent";
+        var parsed = isPercentageField
+            ? ExcelImportCellReader.TryReadPercentageOrStatus(
+                cell,
+                out value,
+                out nonNumericValue)
+            : ExcelImportCellReader.TryReadNumberOrStatus(
+                cell,
+                out value,
+                out nonNumericValue);
+
+        if (parsed
+            && value.HasValue
+            && (field is "upphInstalled" or "upphActual"))
+        {
+            value = decimal.Round(value.Value, 2, MidpointRounding.AwayFromZero);
+        }
+
+        return parsed;
+    }
+
     private static decimal? ReadSimpleNumber(
         IXLWorksheet worksheet,
         int row,
@@ -996,8 +1028,9 @@ public sealed class DailyReportExcelImportService(
     {
         if (column <= 0)
             return null;
-        if (ExcelImportCellReader.TryReadNumberOrStatus(
+        if (TryReadImportNumber(
                 worksheet.Cell(row, column),
+            fieldKey,
                 out var value,
                 out var nonNumericValue))
         {
@@ -1053,8 +1086,9 @@ public sealed class DailyReportExcelImportService(
                 continue;
             }
 
-            if (!ExcelImportCellReader.TryReadNumberOrStatus(
+                if (!TryReadImportNumber(
                     section.Worksheet.Cell(row, column),
+                    field,
                     out var value,
                     out var nonNumericValue))
             {
@@ -1264,8 +1298,17 @@ public sealed class DailyReportExcelImportService(
             Pair("OS&D MTD", "%"),
             Pair("Actual OT (Manhours)", "Planned"),
             Pair("Actual OT (Manhours)", "Unplanned"),
-            0,
-            0,
+            FindOperationalColumn(
+                worksheet,
+                headerRow,
+                lastColumn,
+                "Open WO (Qty)"),
+            FindOperationalColumn(
+                worksheet,
+                headerRow,
+                lastColumn,
+                ">7 Days WO (Qty)",
+                ">7 Days WO (Sum of Bal Qty)"),
             0,
             0,
             Group("Daily TRC In (Qty)"),
@@ -1320,8 +1363,9 @@ public sealed class DailyReportExcelImportService(
             if (column <= 0)
                 continue;
 
-            if (!ExcelImportCellReader.TryReadNumberOrStatus(
+                if (!TryReadImportNumber(
                     section.Worksheet.Cell(row, column),
+                    field,
                     out var value,
                     out var nonNumericValue))
             {
@@ -1524,6 +1568,22 @@ public sealed class DailyReportExcelImportService(
         return 0;
     }
 
+    internal static int FindOperationalColumn(
+        IXLWorksheet worksheet,
+        int row,
+        int lastColumn,
+        params string[] labels)
+    {
+        foreach (var label in labels)
+        {
+            var column = FindColumn(worksheet, row, lastColumn, label);
+            if (column > 0)
+                return column;
+        }
+
+        return 0;
+    }
+
     private static int FindSubColumn(
         IXLWorksheet worksheet,
         int row,
@@ -1669,6 +1729,8 @@ public sealed class DailyReportExcelImportService(
         Add("plannedOTManhours", columns.PlannedOt);
         Add("unplannedOTManhours", columns.UnplannedOt);
         Add("actualOTManhours", columns.PlannedOt > 0 || columns.UnplannedOt > 0 ? 1 : 0);
+        Add("openWOQty", columns.OpenWoQty);
+        Add("over7DaysWOBalanceQty", columns.Over7DaysWoQty);
         Add("dailyTRCInQty", columns.DailyTrcInQty);
         Add("dailyTRCOutQty", columns.DailyTrcOutQty);
         Add("trcOverallFailureInflowPercent", columns.TrcOverallFailureInflowPercent);
@@ -1778,7 +1840,8 @@ public sealed record DailyReportExcelImportEntry(
     string? SapLocation,
     int ModelId,
     string ModelName,
-    DailyReportExcelImportValues Form);
+    DailyReportExcelImportValues Form,
+    int? RowNumber = null);
 
 public sealed record DailyReportExcelImportValues(
     decimal? MonthPlan,

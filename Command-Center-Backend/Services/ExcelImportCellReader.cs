@@ -98,6 +98,20 @@ internal static class ExcelImportCellReader
         return TryReadNumber(sourceCell, out value);
     }
 
+    internal static bool TryReadPercentageOrStatus(
+        IXLCell cell,
+        out decimal? value,
+        out string? nonNumericValue)
+    {
+        if (!TryReadNumberOrStatus(cell, out value, out nonNumericValue))
+            return false;
+
+        if (value.HasValue)
+            value *= 100m;
+
+        return true;
+    }
+
     internal static bool TryReadFATPNumber(IXLCell cell, out decimal? value)
     {
         var sourceCell = ResolveMergedCell(cell);

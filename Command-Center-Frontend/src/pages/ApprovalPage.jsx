@@ -23,8 +23,6 @@ const REPORT_SECTIONS=[
   {label:"OT (Hrs)",fields:[["Target","otTarget"],["Planned","plannedOTManhours"],["Unplanned","unplannedOTManhours"],["Actual","actualOTManhours"]]},
   {label:"Open WO (Qty)",fields:[["Value","openWOQty"]]},
   {label:">7 Days WO (Qty)",fields:[["Value","over7DaysWOBalanceQty"]]},
-  {label:"WIP Lying >3 Days (Cr)",fields:[["Value","wipLyingGreater3Days"]]},
-  {label:"WIP Lying >7 Days (Cr)",fields:[["Value","wipLyingGreater7Days"]]},
  ]},
  {title:"TRC",rows:[
   {label:"Daily TRC In (Qty)",fields:[["Value","dailyTRCInQty"]]},
