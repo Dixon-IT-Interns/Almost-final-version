@@ -57,6 +57,21 @@ $env:Sms__OtpSigningKey = "a-long-random-secret"
 - `GET /api/approvals/batch/{id}` returns all submitted line/model entries for a reporting batch. Its `/approve` and `/reject` actions record one transactional batch decision; reject requests can contain RED/YELLOW field annotations.
 - Viewer reporting supports date-range trends scoped to the selected plant, brand and process. The period comparison page compares a selected month or year with the preceding period. `GET /api/viewer/export` fills the first sheet of `Templates/DixonDailyReportTemplate.xlsx`, retains the supplied workbook's styles and remaining sheet layouts, and clears their sample report values; the template is copied to build and publish output.
 
+## Viewer analytics workspace
+
+For an existing database, run `Database/020_viewer_analytics_saved_views.sql` before using personal saved views. This additive migration creates only the per-user analytics configuration table.
+
+The Viewer-only analytics API uses the same assigned plant/customer scope as the existing Viewer endpoints and reads production/KPI snapshot values from `DailyReport` with `KPI_Daily` taking precedence when present:
+
+- `GET /api/viewer/analytics/filters` returns dependent customer, category, line and model options.
+- `GET /api/viewer/analytics/overview` returns current and preceding equivalent-range summaries, daily trends and customer/category/line breakdowns.
+- `GET /api/viewer/analytics/chart-data` returns server-aggregated data for allow-listed dimensions, metrics and aggregation functions.
+- `GET /api/viewer/analytics/data` returns filtered, searchable, sortable and paginated report rows.
+- `GET /api/viewer/analytics/export` exports the complete filtered result to Excel, up to 10,000 rows.
+- `/api/viewer/analytics/saved-views` supports user-owned list/create/update/delete operations; requests always use the authenticated user ID.
+
+Saved-view filters are revalidated by analytics APIs when reopened. The existing daily Viewer report and its template-based Excel export remain available.
+
 Run the frontend from `Command-Center-Frontend` with `npm run dev`. Set `VITE_API_URL` if the API is hosted at a different URL.
 
 ## Approval workflow

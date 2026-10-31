@@ -1,13 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, RefreshCw, X, Search, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { ChartNoAxesCombined, Download, RefreshCw, X, Search, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "../../api";
 import PortalLayout from "../../components/PortalLayout";
 import "./viewerDashboard.css";
 import "./ViewerProgress.css";
 
+const AnalyticsWorkspace = lazy(() => import("./AnalyticsWorkspace"));
 const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 
-export default function ViewerDashboard({ session, onSignOut }) {
+export default function ViewerDashboard(props) {
+  const [showDailyReport, setShowDailyReport] = useState(false);
+  if (showDailyReport) {
+    return <ViewerDailyReport {...props} onShowAnalytics={() => setShowDailyReport(false)} />;
+  }
+  return <PortalLayout user={props.session?.user} onSignOut={props.onSignOut}>
+    <Suspense fallback={<div className="viewer-page"><main className="viewer-main"><div className="analytics-loading">Loading analytics workspace…</div></main></div>}>
+      <AnalyticsWorkspace session={props.session} onOpenDailyReport={() => setShowDailyReport(true)} />
+    </Suspense>
+  </PortalLayout>;
+}
+
+function ViewerDailyReport({ session, onSignOut, onShowAnalytics }) {
   const [date, setDate] = useState(today);
   const [plantId, setPlantId] = useState("");
   const [plants, setPlants] = useState([]);
@@ -175,7 +188,7 @@ export default function ViewerDashboard({ session, onSignOut }) {
       <main className="viewer-main">
       <div className="viewer-title-row">
         <div><span className="eyebrow">READ ONLY</span><h1>FATP & SMT Work Progress</h1><p>Date-wise production and KPI visibility for the selected plant.</p></div>
-        <div className="viewer-actions"><button className="secondary-btn" onClick={load} disabled={loading||!plantId}><RefreshCw size={16}/> Refresh</button><button className="primary-btn" onClick={openExport} disabled={!plantId}><Download size={16}/> Excel</button></div>
+        <div className="viewer-actions"><button className="secondary-btn" onClick={onShowAnalytics}><ChartNoAxesCombined size={16}/> Analytics workspace</button><button className="secondary-btn" onClick={load} disabled={loading||!plantId}><RefreshCw size={16}/> Refresh</button><button className="primary-btn" onClick={openExport} disabled={!plantId}><Download size={16}/> Excel</button></div>
       </div>
 
       <section className="filters">
