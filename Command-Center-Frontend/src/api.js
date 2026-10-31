@@ -1,6 +1,6 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5211/api";
 
-async function request(path, options = {}) {
+async function request(path, options = {}, responseType = "json") {
   const headers = new Headers(options.headers);
   const token = localStorage.getItem("dcc-token");
 
@@ -15,8 +15,9 @@ async function request(path, options = {}) {
   let response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-  } catch {
-    throw new Error("Could not reach the API. Check the backend URL and that the API is running.");
+  } catch (error) {
+    if (error?.name === "AbortError") throw error;
+    throw new Error("Could not reach the API. Check the backend URL and that the API is running.", { cause: error });
   }
 
   if (!response.ok) {
@@ -32,11 +33,13 @@ async function request(path, options = {}) {
     throw new Error(error?.message || `Request failed (${response.status}).`);
   }
 
-  return response.status === 204 ? null : response.json();
+  if (response.status === 204) return null;
+  return responseType === "blob" ? response.blob() : response.json();
 }
 
 export const api = {
-  get: (path) => request(path),
+  get: (path, options = {}) => request(path, options),
+  download: (path) => request(path, {}, "blob"),
   post: (path, body) => request(path, { method: "POST", body: JSON.stringify(body) }),
   postFormData: (path, body) => request(path, { method: "POST", body }),
   put: (path, body) => request(path, { method: "PUT", body: JSON.stringify(body) }),
