@@ -37,7 +37,9 @@ public sealed class ApprovalController(
         const string sql = """
             SELECT
                 aq.Status,
-                COUNT(1) AS ItemCount
+                COUNT(DISTINCT CONCAT(
+                    CONVERT(char(10), dr.ReportDate, 23), '|',
+                    dr.CustomerId, '|', dr.CreatedBy)) AS ItemCount
             FROM ApprovalQueue aq
             INNER JOIN DailyReport dr
                 ON dr.DailyReportId = aq.DailyReportId

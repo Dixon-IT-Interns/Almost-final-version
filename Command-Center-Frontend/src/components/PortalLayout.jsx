@@ -49,6 +49,23 @@ function getNavigation(role) {
   return navigation[key] || [];
 }
 
+function getPendingReportCountsByDate(alerts) {
+  const reports = new Map();
+  for (const item of alerts) {
+    const reportKey = item.submissionBatchId || `legacy-${item.dailyReportId}`;
+    if (!reports.has(reportKey)) {
+      reports.set(reportKey, String(item.reportDate || "").slice(0, 10));
+    }
+  }
+
+  const counts = new Map();
+  for (const date of reports.values()) {
+    const key = date || "unknown";
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return [...counts.entries()].sort(([dateA], [dateB]) => dateB.localeCompare(dateA));
+}
+
 export default function PortalLayout({ user, onSignOut, children, contentClassName = "" }) {
   const [expanded, setExpanded] = useState(() => localStorage.getItem("dcc-sidebar-expanded") === "true");
   const toggleSidebar = () => setExpanded(value => {
@@ -105,7 +122,14 @@ function WorkspaceAlert({ user }) {
   const hasRejected = alerts.some(item => item.type === "REJECTED");
   if (!alerts.length || (contributorDashboard && !hasRejected)) return null;
 
-  const signature = `${alerts.length}:${alerts[0]?.approvalQueueId || alerts[0]?.type || alerts[0]?.reportDate || "active"}`;
+  const pendingDateCounts = role === "Approver" ? getPendingReportCountsByDate(alerts) : [];
+  const pendingReportCount = pendingDateCounts.reduce((total, [, count]) => total + count, 0);
+  const pendingReportKeys = role === "Approver"
+    ? [...new Set(alerts.map(item => item.submissionBatchId || `legacy-${item.dailyReportId}`))].sort()
+    : [];
+  const signature = role === "Approver"
+    ? pendingReportKeys.join("|")
+    : `${alerts.length}:${alerts[0]?.approvalQueueId || alerts[0]?.type || alerts[0]?.reportDate || "active"}`;
   if (dismissed === signature) return null;
 
   const rejected = role === "Contributor" && hasRejected;
@@ -113,12 +137,17 @@ function WorkspaceAlert({ user }) {
   const urgent = rejected || overdue;
   const rejectedCount = alerts.filter(item => item.type === "REJECTED").length;
   const title = role === "Approver"
-    ? `${alerts.length} report${alerts.length === 1 ? "" : "s"} waiting for review`
+    ? `${pendingReportCount} pending report${pendingReportCount === 1 ? "" : "s"} across ${pendingDateCounts.length} date${pendingDateCounts.length === 1 ? "" : "s"}`
     : rejected
       ? `${rejectedCount} submitted report${rejectedCount === 1 ? " needs" : "s need"} your correction`
       : "A daily report is overdue";
   const detail = role === "Approver"
-    ? `${alerts[0]?.submittedBy || "A contributor"} submitted a report${alerts[0]?.reportDate ? ` for ${new Date(alerts[0].reportDate).toLocaleDateString()}` : ""}.`
+    ? pendingDateCounts.map(([date, count]) => {
+        const label = date === "unknown"
+          ? "Unknown date"
+          : new Date(`${date}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+        return `${label}: ${count} report${count === 1 ? "" : "s"}`;
+      }).join(" · ")
     : alerts.find(item => item.type === "REJECTED")?.message || alerts[0]?.message || "Open your notifications to review the details.";
 
   return <aside className={`workspace-alert ${rejected ? "is-correction" : overdue ? "is-overdue" : "is-review"}`} role={urgent ? "alert" : "status"}>

@@ -29,6 +29,8 @@
 .approver-matrix-value{min-width:72px;max-width:180px;display:grid;gap:3px}
 .approver-matrix-value>span{color:var(--muted);font-size:9px;font-weight:700}
 .approver-matrix-cell{min-width:72px;min-height:31px;padding:5px 7px;border:1px solid transparent;border-radius:6px;color:var(--text);text-align:left;font:750 10px var(--font-family-base);cursor:pointer}
+.approver-matrix-value:has(.approver-matrix-cell[aria-label*="Issue Description"]){width:100%;min-width:0;max-width:180px}
+.approver-matrix-cell[aria-label*="Issue Description"]{width:100%;min-width:0;max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
 .approver-matrix-cell.validation-empty{border-color:#D1D5DB;background:#F3F4F6;color:#6B7280}
 .approver-matrix-cell.validation-target{border-color:#FACC15;background:#FEF3C7;color:#854D0E}
 .approver-matrix-cell.validation-valid{border-color:#86C99B;background:#DCFCE7;color:#166534}
