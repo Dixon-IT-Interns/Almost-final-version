@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Dixon.CommandCenter.API.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+53e504cbc72c2327e84adf0698529c0ab22b67be")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+28184eea68983907fb85cb050e4e9ddf7fb32d82")]
 [assembly: System.Reflection.AssemblyProductAttribute("Dixon.CommandCenter.API.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Dixon.CommandCenter.API.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

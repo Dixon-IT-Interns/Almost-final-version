@@ -1247,7 +1247,13 @@ public sealed class DailyReportsController(
             FROM ReportFieldAnnotation a INNER JOIN DailyReport dr ON dr.DailyReportId=a.DailyReportId
             INNER JOIN [User] creator ON creator.UserId=a.CreatedBy LEFT JOIN [User] resolver ON resolver.UserId=a.ResolvedBy
             INNER JOIN ProductionLine pl ON pl.LineId=dr.LineId LEFT JOIN Model m ON m.ModelId=dr.ModelId
-            WHERE dr.PlantId=@PlantId AND dr.CustomerId=@CustomerId AND dr.CategoryId=@CategoryId AND dr.ReportDate=@ReportDate AND dr.CreatedBy=@UserId
+            WHERE dr.PlantId=@PlantId AND dr.CustomerId=@CustomerId AND dr.ReportDate=@ReportDate AND dr.CreatedBy=@UserId
+              AND (dr.CategoryId=@CategoryId OR (dr.SubmissionBatchId IS NOT NULL AND EXISTS(
+                  SELECT 1 FROM DailyReport scopeReport
+                  WHERE scopeReport.PlantId=dr.PlantId AND scopeReport.CustomerId=dr.CustomerId
+                    AND scopeReport.ReportDate=dr.ReportDate AND scopeReport.CreatedBy=dr.CreatedBy
+                    AND scopeReport.CategoryId=@CategoryId AND scopeReport.SubmissionBatchId=dr.SubmissionBatchId
+              )))
             ORDER BY a.CreatedAt,a.AnnotationId;
             """;
         await using var command=new SqlCommand(sql,connection);Add(command,"@PlantId",SqlDbType.Int,GetPlantId());Add(command,"@CustomerId",SqlDbType.Int,customerId);Add(command,"@CategoryId",SqlDbType.Int,categoryId);Add(command,"@ReportDate",SqlDbType.Date,reportDate.Date);Add(command,"@UserId",SqlDbType.Int,GetUserId());
