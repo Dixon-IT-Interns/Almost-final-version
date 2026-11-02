@@ -5,7 +5,7 @@ import PortalLayout from "../components/PortalLayout";
 import ViewerAccessDialog from "./ViewerAccessDialog";
 import "./AdminPage.css";
 
-const blankUser={fullName:"",email:"",password:"",roleId:"",plantId:"",customerIds:[]};
+const blankUser={fullName:"",email:"",employeeId:"",password:"",roleId:"",plantId:"",customerIds:[]};
 const blankPlan={plantId:"",customerId:"",categoryId:"",lineId:"",modelId:"",year:new Date().getFullYear(),month:new Date().getMonth()+1,productionPlan:"",uphTarget:"",upphTarget:"",cphTarget:"",fpyTarget:"",ftyTarget:"",rtyTarget:"",osdTarget:"",otTarget:"",isActive:true};
 
 export default function AdminPage({session,onSignOut}){
@@ -34,7 +34,7 @@ export default function AdminPage({session,onSignOut}){
  const flash=msg=>{setMessage(msg);setTimeout(()=>setMessage(""),2600)};
  const run=async(fn,msg)=>{setBusy(true);setError("");try{await fn();flash(msg);await load();await loadPlans()}catch(e){setError(e.message)}finally{setBusy(false)}};
 
- const openUser=u=>{const mappedCustomerIds=new Set((data.plantCustomers||[]).filter(pc=>Number(pc.plantId)===Number(u.plantId)).map(pc=>Number(pc.customerId)));const activeCustomerIds=new Set(data.customers.filter(customer=>customer.isActive).map(customer=>Number(customer.customerId)));setEditingUser(u);setUserForm({fullName:u.fullName,email:u.email||"",password:"",roleId:String(u.roleId),plantId:String(u.plantId),customerIds:(u.customers||[]).map(c=>Number(c.customerId)).filter(customerId=>mappedCustomerIds.has(customerId)&&activeCustomerIds.has(customerId))});setTab("users")};
+ const openUser=u=>{const mappedCustomerIds=new Set((data.plantCustomers||[]).filter(pc=>Number(pc.plantId)===Number(u.plantId)).map(pc=>Number(pc.customerId)));const activeCustomerIds=new Set(data.customers.filter(customer=>customer.isActive).map(customer=>Number(customer.customerId)));setEditingUser(u);setUserForm({fullName:u.fullName,email:u.email||"",employeeId:u.employeeId||"",password:"",roleId:String(u.roleId),plantId:String(u.plantId),customerIds:(u.customers||[]).map(c=>Number(c.customerId)).filter(customerId=>mappedCustomerIds.has(customerId)&&activeCustomerIds.has(customerId))});setTab("users")};
  const saveUser=async e=>{e.preventDefault();await run(async()=>{const payload={...userForm,roleId:Number(userForm.roleId),plantId:Number(userForm.plantId),customerIds:userForm.customerIds};if(editingUser)await api.put(`/admin/users/${editingUser.userId}`,payload);else{delete payload.password;await api.post("/admin/users",payload);}setEditingUser(null);setUserForm({...blankUser,roleId:userForm.roleId,plantId:userForm.plantId});},editingUser?"User updated.":"User created.")};
  const deleteUser=async id=>{if(!confirm("Deactivate this user? They will no longer be able to sign in."))return;await run(()=>api.delete(`/admin/users/${id}`),"User deactivated.")};
  const setUserActive=async(id,isActive)=>await run(()=>api.patch(`/admin/users/${id}/active`,{isActive}),isActive?"User activated.":"User deactivated.");
@@ -81,27 +81,460 @@ function PlantCustomersPanel({plants,customers,form,setForm,changePlant,save,bus
  const toggleVisible=()=>setForm(current=>{const ids=new Set(current.customerIds.map(Number));if(visibleSelected)selectableVisible.forEach(customer=>ids.delete(Number(customer.customerId)));else selectableVisible.forEach(customer=>ids.add(Number(customer.customerId)));return{...current,customerIds:[...ids]};});
  return <div><PanelHead title="Plant customers" text="Assign brands to plants independently. The same brand can be linked to multiple plants; changing one plant's selection must not affect the others."/><form className="admin-form-card plant-customer-form" onSubmit={save}><div className="form-two"><Field label="Plant"><select required value={form.plantId} onChange={event=>changePlant(event.target.value)} disabled={loading||!activePlants.length||!superAdmin}><option value="">Select a plant</option>{activePlants.map(plant=><option key={plant.plantId} value={plant.plantId}>{plant.plantName}</option>)}</select></Field><div className="plant-customer-count"><span>Assigned customers</span><strong>{selectedCount}</strong><small>for the selected plant</small></div></div><div className="plant-customer-toolbar"><label className="toolbar-search"><Search size={16}/><input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Find a customer or brand…" aria-label="Search customers"/></label><button type="button" className="btn-secondary" disabled={!form.plantId||!selectableVisible.length} onClick={toggleVisible}>{visibleSelected?"Clear visible":"Select visible active"}</button></div><div className="field-block"><div className="customer-assignment-grid">{loading?<span className="empty-state">Loading customers…</span>:!form.plantId?<span className="empty-state">Select a plant to manage its customers.</span>:visibleCustomers.length?visibleCustomers.map(customer=>{const selected=selectedIds.includes(Number(customer.customerId));return <label key={customer.customerId} className={`check-item ${selected?"selected":""} ${!customer.isActive?"disabled-item":""}`}><input type="checkbox" checked={selected} disabled={!customer.isActive&&!selected} onChange={()=>setForm(current=>{const ids=current.customerIds.map(Number);return{...current,customerIds:ids.includes(Number(customer.customerId))?ids.filter(id=>id!==Number(customer.customerId)):[...ids,Number(customer.customerId)]};})}/><span>{customer.customerName}<small>{customer.isActive?"Active brand":"Inactive brand"}</small></span></label>;}):<span className="empty-state">No customers match this search.</span>}</div></div><div className="form-actions"><button className="btn-primary" disabled={busy||loading||!form.plantId}><Save size={15}/>Save plant customers</button></div></form></div>
 }
-function UsersPanel({users,roles,plants,customers,form,setForm,editing,setEditing,save,toggleCustomer,openUser,deleteUser,setUserActive,configureViewer,busy,catalogLoading,enumError,superAdmin,assignedPlantId}){
- const [search,setSearch]=useState("");
- const [roleFilter,setRoleFilter]=useState("all");
- const [plantFilter,setPlantFilter]=useState("all");
- const [statusFilter,setStatusFilter]=useState("all");
- const [sortBy,setSortBy]=useState("name-asc");
- const isViewer=roles.find(role=>String(role.roleId)===String(form.roleId))?.roleName==="Viewer";
- const filteredUsers=users.filter(user=>{
-   const searchText=[user.fullName,user.email,user.roleName,user.plantName,...(user.customers||[]).map(customer=>customer.customerName)].filter(Boolean).join(" ").toLowerCase();
-   return searchText.includes(search.trim().toLowerCase())
-     &&(roleFilter==="all"||user.roleName===roleFilter)
-     &&(!superAdmin||plantFilter==="all"||String(user.plantId)===plantFilter)
-     &&(statusFilter==="all"||(statusFilter==="active"&&user.isActive)||(statusFilter==="inactive"&&!user.isActive));
- }).sort((a,b)=>{
-   if(sortBy==="name-desc")return String(b.fullName||"").localeCompare(String(a.fullName||""));
-   if(sortBy==="role")return String(a.roleName||"").localeCompare(String(b.roleName||""))||String(a.fullName||"").localeCompare(String(b.fullName||""));
-   if(sortBy==="plant")return String(a.plantName||"").localeCompare(String(b.plantName||""))||String(a.fullName||"").localeCompare(String(b.fullName||""));
-   if(sortBy==="status")return Number(Boolean(b.isActive))-Number(Boolean(a.isActive))||String(a.fullName||"").localeCompare(String(b.fullName||""));
-   return String(a.fullName||"").localeCompare(String(b.fullName||""));
- });
- return <div><PanelHead title="Users & access" text={superAdmin?"Create and manage plant administrators, approvers and contributors. Configure each Viewer’s plant and customer scope.":"Create and manage Approver and Contributor accounts for your assigned plant. Viewer access can only be configured within your authorized plant."}/><div className="split-admin"><form className="admin-form-card" onSubmit={save}><div className="form-card-title">{editing?"Edit user":"Create user"}</div><Field label="Full name"><input required maxLength={120} value={form.fullName} onChange={e=>setForm({...form,fullName:e.target.value})}/></Field><Field label="Work email"><input required type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></Field>{editing&&<Field label="New password (optional)"><input minLength="8" type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/><small className="user-form-hint">Leave blank to keep the current password.</small></Field>}{!editing&&<div className="user-invite-note"><ShieldCheck size={16}/><span>A secure password setup link will be sent to this user by email.</span></div>}<div className="form-two"><Field label="Role"><select required value={form.roleId} onChange={e=>setForm({...form,roleId:e.target.value})}>{catalogLoading?<option value="">Loading roles…</option>:enumError?<option value="">Unable to load roles.</option>:roles.length?roles.map(r=><option key={r.roleId} value={r.roleId}>{r.roleName}</option>):<option value="">No roles available</option>}</select></Field>{!isViewer&&<Field label={superAdmin?"Assign plant":"Assigned plant"}><select required value={form.plantId} disabled={!superAdmin} onChange={e=>setForm({...form,plantId:e.target.value,customerIds:[]})}>{catalogLoading?<option value="">Loading plants…</option>:enumError?<option value="">Unable to load plants.</option>:plants.filter(p=>p.isActive).length?plants.filter(p=>p.isActive).map(p=><option key={p.plantId} value={p.plantId}>{p.plantName}</option>):<option value="">No active plants available</option>}</select></Field>}</div>{isViewer?<div className="field-block"><span>Viewer access</span><p>Set an explicit plant and customer scope after creating this Viewer. Reports remain unavailable until access is configured.</p></div>:<div className="field-block"><span>Brand access</span><div className="check-grid">{catalogLoading?<span className="empty-state">Loading brands…</span>:enumError?<span className="empty-state">Unable to load brands.</span>:customers.filter(c=>c.isActive).length?customers.filter(c=>c.isActive).map(c=><label key={c.customerId} className={form.customerIds.map(Number).includes(Number(c.customerId))?"check-item selected":"check-item"}><input type="checkbox" checked={form.customerIds.map(Number).includes(Number(c.customerId))} onChange={()=>toggleCustomer(Number(c.customerId))}/>{c.customerName}</label>):<span className="empty-state">No active brands mapped to this plant. Map brands in Plant Customers first.</span>}</div></div>}<div className="form-actions"><button className="btn-primary" disabled={busy||catalogLoading||!roles.length}><Save size={15}/>{editing?"Save changes":"Create user"}</button>{editing&&<button type="button" className="btn-secondary" onClick={()=>{setEditing(null);setForm({fullName:"",email:"",password:"",roleId:String(roles[0]?.roleId||""),plantId:String(superAdmin?(plants.find(x=>x.isActive)?.plantId||""):(assignedPlantId||plants[0]?.plantId||"")),customerIds:[]})}}><X size={15}/> Cancel</button>}</div></form><div className="data-table-card"><div className="table-head"><span>{filteredUsers.length} of {users.length} users</span><span className="table-count-note">{users.filter(user=>user.isActive).length} active</span></div><div className="admin-toolbar"><label className="toolbar-search"><Search size={16}/><input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, email, brand…" aria-label="Search users"/></label><div className="toolbar-controls"><label className="toolbar-select"><SlidersHorizontal size={14}/><select aria-label="Filter by role" value={roleFilter} onChange={e=>setRoleFilter(e.target.value)}><option value="all">All roles</option>{[...new Set(users.map(user=>user.roleName).filter(Boolean))].sort().map(role=><option key={role} value={role}>{role}</option>)}</select></label>{superAdmin&&<label className="toolbar-select"><Building2 size={14}/><select aria-label="Filter by plant" value={plantFilter} onChange={e=>setPlantFilter(e.target.value)}><option value="all">All plants</option>{plants.map(plant=><option key={plant.plantId} value={plant.plantId}>{plant.plantName}</option>)}</select></label>}<label className="toolbar-select"><Filter size={14}/><select aria-label="Filter by status" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="all">All status</option><option value="active">Active</option><option value="inactive">Inactive</option></select></label><label className="toolbar-select"><ArrowDownUp size={14}/><select aria-label="Sort users" value={sortBy} onChange={e=>setSortBy(e.target.value)}><option value="name-asc">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="role">Role</option><option value="plant">Plant</option><option value="status">Active first</option></select></label></div></div><div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>User</th><th>Role</th><th>Plant</th><th>Customer / Viewer scope</th><th>Status</th><th>Actions</th></tr></thead><tbody>{filteredUsers.length?filteredUsers.map(u=><tr key={u.userId}><td><strong>{u.fullName}</strong><small>{u.email||"—"}</small></td><td>{u.roleName}</td><td>{u.plantName||"—"}</td><td>{u.roleName==="Viewer"?viewerAccessSummary(u.viewerAccess):u.customers?.map(c=>c.customerName).join(", ")||"None"}</td><td><span className={`status ${u.isActive?"active":"inactive"}`}>{u.isActive?"Active":"Inactive"}</span></td><td><div className="row-actions">{u.roleName==="Viewer"&&<button type="button" title="Configure Viewer access" aria-label={`Configure Viewer access for ${u.fullName}`} onClick={()=>configureViewer(u)}><ShieldCheck size={14}/></button>}<button type="button" title="Edit user" aria-label={`Edit ${u.fullName}`} onClick={()=>openUser(u)}><Pencil size={14}/></button>{u.isActive?<button type="button" title="Deactivate user" aria-label={`Deactivate ${u.fullName}`} onClick={()=>deleteUser(u.userId)}><Trash2 size={14}/></button>:<button type="button" title="Reactivate user" aria-label={`Reactivate ${u.fullName}`} onClick={()=>setUserActive(u.userId,true)}><Plus size={14}/></button>}</div></td></tr>):<tr><td colSpan={6}><div className="table-empty">No users match these filters.</div></td></tr>}</tbody></table></div></div></div></div>
+function UsersPanel({
+  users,
+  roles,
+  plants,
+  customers,
+  form,
+  setForm,
+  editing,
+  setEditing,
+  save,
+  toggleCustomer,
+  openUser,
+  deleteUser,
+  setUserActive,
+  configureViewer,
+  busy,
+  catalogLoading,
+  enumError,
+  superAdmin,
+  assignedPlantId,
+}) {
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [plantFilter, setPlantFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("name-asc");
+  const isViewer =
+    roles.find((role) => String(role.roleId) === String(form.roleId))
+      ?.roleName === "Viewer";
+  const filteredUsers = users
+    .filter((user) => {
+      const searchText = [
+        user.fullName,
+        user.employeeId,
+        user.email,
+        user.roleName,
+        user.plantName,
+        ...(user.customers || []).map((customer) => customer.customerName),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return (
+        searchText.includes(search.trim().toLowerCase()) &&
+        (roleFilter === "all" || user.roleName === roleFilter) &&
+        (!superAdmin ||
+          plantFilter === "all" ||
+          String(user.plantId) === plantFilter) &&
+        (statusFilter === "all" ||
+          (statusFilter === "active" && user.isActive) ||
+          (statusFilter === "inactive" && !user.isActive))
+      );
+    })
+    .sort((a, b) => {
+      if (sortBy === "name-desc")
+        return String(b.fullName || "").localeCompare(String(a.fullName || ""));
+      if (sortBy === "role")
+        return (
+          String(a.roleName || "").localeCompare(String(b.roleName || "")) ||
+          String(a.fullName || "").localeCompare(String(b.fullName || ""))
+        );
+      if (sortBy === "plant")
+        return (
+          String(a.plantName || "").localeCompare(String(b.plantName || "")) ||
+          String(a.fullName || "").localeCompare(String(b.fullName || ""))
+        );
+      if (sortBy === "status")
+        return (
+          Number(Boolean(b.isActive)) - Number(Boolean(a.isActive)) ||
+          String(a.fullName || "").localeCompare(String(b.fullName || ""))
+        );
+      return String(a.fullName || "").localeCompare(String(b.fullName || ""));
+    });
+  return (
+    <div>
+      <PanelHead
+        title="Users & access"
+        text={
+          superAdmin
+            ? "Create and manage plant administrators, approvers and contributors. Configure each Viewer’s plant and customer scope."
+            : "Create and manage Approver and Contributor accounts for your assigned plant. Viewer access can only be configured within your authorized plant."
+        }
+      />
+      <div className="split-admin">
+        <form className="admin-form-card" onSubmit={save}>
+          <div className="form-card-title">
+            {editing ? "Edit user" : "Create user"}
+          </div>
+          <Field label="Full name">
+            <input
+              required
+              maxLength={120}
+              value={form.fullName}
+              onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+            />
+          </Field>
+          <Field label="Work email">
+            <input
+              required
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
+          </Field>
+          <Field label="Employee ID">
+            <input
+              required
+              maxLength={50}
+              value={form.employeeId}
+              onChange={(e) => setForm({ ...form, employeeId: e.target.value })}
+            />
+          </Field>
+          {editing && (
+            <Field label="New password (optional)">
+              <input
+                minLength="8"
+                type="password"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+              />
+              <small className="user-form-hint">
+                Leave blank to keep the current password.
+              </small>
+            </Field>
+          )}
+          {!editing && (
+            <div className="user-invite-note">
+              <ShieldCheck size={16} />
+              <span>
+                A secure password setup link will be sent to this user by email.
+              </span>
+            </div>
+          )}
+          <div className="form-two">
+            <Field label="Role">
+              <select
+                required
+                value={form.roleId}
+                onChange={(e) => setForm({ ...form, roleId: e.target.value })}
+              >
+                {catalogLoading ? (
+                  <option value="">Loading roles…</option>
+                ) : enumError ? (
+                  <option value="">Unable to load roles.</option>
+                ) : roles.length ? (
+                  roles.map((r) => (
+                    <option key={r.roleId} value={r.roleId}>
+                      {r.roleName}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No roles available</option>
+                )}
+              </select>
+            </Field>
+            {!isViewer && (
+              <Field label={superAdmin ? "Assign plant" : "Assigned plant"}>
+                <select
+                  required
+                  value={form.plantId}
+                  disabled={!superAdmin}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      plantId: e.target.value,
+                      customerIds: [],
+                    })
+                  }
+                >
+                  {catalogLoading ? (
+                    <option value="">Loading plants…</option>
+                  ) : enumError ? (
+                    <option value="">Unable to load plants.</option>
+                  ) : plants.filter((p) => p.isActive).length ? (
+                    plants
+                      .filter((p) => p.isActive)
+                      .map((p) => (
+                        <option key={p.plantId} value={p.plantId}>
+                          {p.plantName}
+                        </option>
+                      ))
+                  ) : (
+                    <option value="">No active plants available</option>
+                  )}
+                </select>
+              </Field>
+            )}
+          </div>
+          {isViewer ? (
+            <div className="field-block">
+              <span>Viewer access</span>
+              <p>
+                Set an explicit plant and customer scope after creating this
+                Viewer. Reports remain unavailable until access is configured.
+              </p>
+            </div>
+          ) : (
+            <div className="field-block">
+              <span>Brand access</span>
+              <div className="check-grid">
+                {catalogLoading ? (
+                  <span className="empty-state">Loading brands…</span>
+                ) : enumError ? (
+                  <span className="empty-state">Unable to load brands.</span>
+                ) : customers.filter((c) => c.isActive).length ? (
+                  customers
+                    .filter((c) => c.isActive)
+                    .map((c) => (
+                      <label
+                        key={c.customerId}
+                        className={
+                          form.customerIds
+                            .map(Number)
+                            .includes(Number(c.customerId))
+                            ? "check-item selected"
+                            : "check-item"
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          checked={form.customerIds
+                            .map(Number)
+                            .includes(Number(c.customerId))}
+                          onChange={() => toggleCustomer(Number(c.customerId))}
+                        />
+                        {c.customerName}
+                      </label>
+                    ))
+                ) : (
+                  <span className="empty-state">
+                    No active brands mapped to this plant. Map brands in Plant
+                    Customers first.
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="form-actions">
+            <button
+              className="btn-primary"
+              disabled={busy || catalogLoading || !roles.length}
+            >
+              <Save size={15} />
+              {editing ? "Save changes" : "Create user"}
+            </button>
+            {editing && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setEditing(null);
+                  setForm({
+                    fullName: "",
+                    email: "",
+                    employeeId: "",
+                    password: "",
+                    roleId: String(roles[0]?.roleId || ""),
+                    plantId: String(
+                      superAdmin
+                        ? plants.find((x) => x.isActive)?.plantId || ""
+                        : assignedPlantId || plants[0]?.plantId || "",
+                    ),
+                    customerIds: [],
+                  });
+                }}
+              >
+                <X size={15} /> Cancel
+              </button>
+            )}
+          </div>
+        </form>
+        <div className="data-table-card">
+          <div className="table-head">
+            <span>
+              {filteredUsers.length} of {users.length} users
+            </span>
+            <span className="table-count-note">
+              {users.filter((user) => user.isActive).length} active
+            </span>
+          </div>
+          <div className="admin-toolbar">
+            <label className="toolbar-search">
+              <Search size={16} />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name, employee ID, email, brand…"
+                aria-label="Search users"
+              />
+            </label>
+            <div className="toolbar-controls">
+              <label className="toolbar-select">
+                <SlidersHorizontal size={14} />
+                <select
+                  aria-label="Filter by role"
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                >
+                  <option value="all">All roles</option>
+                  {[
+                    ...new Set(
+                      users.map((user) => user.roleName).filter(Boolean),
+                    ),
+                  ]
+                    .sort()
+                    .map((role) => (
+                      <option key={role} value={role}>
+                        {role}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              {superAdmin && (
+                <label className="toolbar-select">
+                  <Building2 size={14} />
+                  <select
+                    aria-label="Filter by plant"
+                    value={plantFilter}
+                    onChange={(e) => setPlantFilter(e.target.value)}
+                  >
+                    <option value="all">All plants</option>
+                    {plants.map((plant) => (
+                      <option key={plant.plantId} value={plant.plantId}>
+                        {plant.plantName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="toolbar-select">
+                <Filter size={14} />
+                <select
+                  aria-label="Filter by status"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                >
+                  <option value="all">All status</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </label>
+              <label className="toolbar-select">
+                <ArrowDownUp size={14} />
+                <select
+                  aria-label="Sort users"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                >
+                  <option value="name-asc">Name A–Z</option>
+                  <option value="name-desc">Name Z–A</option>
+                  <option value="role">Role</option>
+                  <option value="plant">Plant</option>
+                  <option value="status">Active first</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div className="admin-table-scroll">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Plant</th>
+                  <th>Customer / Viewer scope</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUsers.length ? (
+                  filteredUsers.map((u) => (
+                    <tr key={u.userId}>
+                      <td>
+                        <strong>{u.fullName}</strong>
+                        <small>Employee ID: {u.employeeId || "—"}</small>
+                        <small>{u.email || "—"}</small>
+                      </td>
+                      <td>{u.roleName}</td>
+                      <td>{u.plantName || "—"}</td>
+                      <td>
+                        {u.roleName === "Viewer"
+                          ? viewerAccessSummary(u.viewerAccess)
+                          : u.customers
+                              ?.map((c) => c.customerName)
+                              .join(", ") || "None"}
+                      </td>
+                      <td>
+                        <span
+                          className={`status ${u.isActive ? "active" : "inactive"}`}
+                        >
+                          {u.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          {u.roleName === "Viewer" && (
+                            <button
+                              type="button"
+                              title="Configure Viewer access"
+                              aria-label={`Configure Viewer access for ${u.fullName}`}
+                              onClick={() => configureViewer(u)}
+                            >
+                              <ShieldCheck size={14} />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            title="Edit user"
+                            aria-label={`Edit ${u.fullName}`}
+                            onClick={() => openUser(u)}
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          {u.isActive ? (
+                            <button
+                              type="button"
+                              title="Deactivate user"
+                              aria-label={`Deactivate ${u.fullName}`}
+                              onClick={() => deleteUser(u.userId)}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              title="Reactivate user"
+                              aria-label={`Reactivate ${u.fullName}`}
+                              onClick={() => setUserActive(u.userId, true)}
+                            >
+                              <Plus size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6}>
+                      <div className="table-empty">
+                        No users match these filters.
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 function viewerAccessSummary(access){
  if(!access?.configured)return "Not configured — no report access";

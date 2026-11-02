@@ -113,7 +113,15 @@ export default function ProfilePage({ session, onSignOut, onProfileUpdate }) {
             <label>New phone number<input type="tel" maxLength={30} value={pendingPhoneNumber} onChange={event=>{setPendingPhoneNumber(event.target.value);setOtpSent(false);}} placeholder="+91 98765 43210" autoComplete="tel" /><small>Include country code. Number is saved after OTP verification.</small></label>
             {!otpSent ? <button type="submit" className="profile-save-button" disabled={busy || !pendingPhoneNumber.trim()}><Send size={15}/>{busy ? "Sending code…" : "Send verification code"}</button> : <div className="phone-otp-step"><label>6-digit code<input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" value={otp} onChange={event=>setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="Enter OTP" required /></label><div className="phone-otp-actions"><button type="button" className="profile-secondary-button" disabled={busy} onClick={sendPhoneOtp}>Resend code</button><button type="button" className="profile-save-button" disabled={busy || otp.length !== 6} onClick={verifyPhoneOtp}><Check size={15}/>{busy ? "Verifying…" : "Verify and save"}</button></div></div>}
           </div>
-          <div className="profile-readonly-grid"><div><span>Role</span><strong>{profile.roleName || "—"}</strong></div><div><span>Plant</span><strong>{profile.plantName || "—"}</strong></div></div>
+          <div className="profile-readonly-grid">
+            <div><span>Role</span><strong>{profile.roleName || "—"}</strong></div>
+            <div><span>Employee ID</span><strong>{profile.employeeId || "Not assigned"}</strong></div>
+            <div><span>Home plant</span><strong>{profile.plantName || "—"}</strong></div>
+            <div>
+              <span>Connected plants</span>
+              <strong>{profile.plants?.length ? profile.plants.map(plant => plant.plantName).join(", ") : "No plants assigned"}</strong>
+            </div>
+          </div>
         </form>
       </div>}
     </div>

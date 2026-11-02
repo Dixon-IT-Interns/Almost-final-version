@@ -2,6 +2,8 @@
 
 The API uses the existing SQL Server schema in `Dixon_Command_Center`. Create or verify tables with `Database/schema.sql`. For an existing database, run `Database/007_plant_customer.sql`, then `Database/008_super_admin_hierarchy.sql`, before `Database/seed.sql` or starting the updated API. The first migration backfills plant/customer mappings. The second adds the `SuperAdmin` role and promotes the first existing Admin to SuperAdmin; remaining Admins are plant-scoped. Then use `Database/seed.sql` for the roles, plant, plant/customer assignments, categories, models, and production lines. The seed is rerunnable and includes a guarded correction for the existing Acer-SMT/Gigabyte-FATP line mapping error. On a new database, run `Database/schema.sql` and `Database/seed.sql`; initial setup creates the first SuperAdmin.
 
+For an existing database, run `Database/021_user_employee_id.sql` before deploying the admin UI/API changes. New users require an Employee ID, and administrators must assign IDs to existing users through Admin > Users & access. Employee IDs are normalized to uppercase and enforced unique across users; login continues to use email.
+
 For an existing database, run `Database/013_user_profile.sql` to add phone verification fields and profile photos before using the profile page. Run `Database/014_approval_batches_and_annotations.sql` to add submission-cycle IDs and field-level review audit before using consolidated Approver reviews.
 
 Run `Database/016_daily_report_non_numeric_values.sql` on existing databases before deploying the API version that supports `N/P` and `N/A` values in daily reports.

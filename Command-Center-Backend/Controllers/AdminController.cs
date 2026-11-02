@@ -158,7 +158,7 @@ public sealed class AdminController(
         {
             return Conflict(new
             {
-                message = "A user with this email already exists."
+                message = "A user with this email or Employee ID already exists."
             });
         }
         catch (PlantCustomerAssignmentException exception)
@@ -224,7 +224,7 @@ public sealed class AdminController(
         {
             return Conflict(new
             {
-                message = "A user with this email already exists."
+                message = "A user with this email or Employee ID already exists."
             });
         }
         catch (PlantCustomerAssignmentException exception)
