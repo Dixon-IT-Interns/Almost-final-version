@@ -23,6 +23,7 @@ public sealed record UserResponse(
     int UserId,
     string FullName,
     string? Email,
+    string? EmployeeId,
     int RoleId,
     string RoleName,
     int PlantId,
@@ -49,7 +50,8 @@ public sealed record CreateUserRequest
     [Required, EmailAddress, MaxLength(150)]
     public required string Email { get; init; }
 
-   
+    [Required, MaxLength(50)]
+    public required string EmployeeId { get; init; }
 
     [Range(1, int.MaxValue)]
     public int RoleId { get; init; }
@@ -126,6 +128,7 @@ public sealed record UpdateUserRequest
 {
     [Required, MaxLength(100)] public required string FullName { get; init; }
     [Required, EmailAddress, MaxLength(150)] public required string Email { get; init; }
+    [Required, MaxLength(50)] public required string EmployeeId { get; init; }
     [Range(1, int.MaxValue)] public int RoleId { get; init; }
     [Range(1, int.MaxValue)] public int PlantId { get; init; }
     public string? Password { get; init; }

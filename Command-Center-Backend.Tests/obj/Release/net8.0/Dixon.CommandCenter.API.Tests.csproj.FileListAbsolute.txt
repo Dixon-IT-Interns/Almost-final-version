@@ -163,3 +163,4 @@ C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Cent
 C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Release\net8.0\Dixon.CommandCenter.API.Tests.pdb
 C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Release\net8.0\Dixon.CommandCenter.API.Tests.genruntimeconfig.cache
 C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\obj\Release\net8.0\ref\Dixon.CommandCenter.API.Tests.dll
+C:\Users\Administrator\Desktop\Interns Project\Command-Center-Dummy\Command-Center-Backend.Tests\bin\Release\net8.0\Dixon.CommandCenter.API.exe

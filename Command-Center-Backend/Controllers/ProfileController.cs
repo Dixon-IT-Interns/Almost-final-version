@@ -25,8 +25,8 @@ public sealed class ProfileController(SqlConnectionFactory connectionFactory, Sm
 
         await using var connection = await connectionFactory.OpenAsync(cancellationToken);
         const string sql = """
-            SELECT u.UserId, u.FullName, u.Email, u.PhoneNumber,
-                   r.RoleName, p.PlantId, p.PlantName,
+                 SELECT u.UserId, u.FullName, u.Email, u.PhoneNumber, u.EmployeeId,
+                     r.RoleName, p.PlantId, p.PlantName,
                    u.ProfilePictureData, u.ProfilePictureMimeType
             FROM dbo.[User] u
             INNER JOIN dbo.Role r ON r.RoleId = u.RoleId
@@ -38,18 +38,71 @@ public sealed class ProfileController(SqlConnectionFactory connectionFactory, Sm
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return NotFound();
 
-        var picture = reader.IsDBNull(7) || reader.IsDBNull(8)
+        var picture = reader.IsDBNull(8) || reader.IsDBNull(9)
             ? null
-            : $"data:{reader.GetString(8)};base64,{Convert.ToBase64String((byte[])reader.GetValue(7))}";
+            : $"data:{reader.GetString(9)};base64,{Convert.ToBase64String((byte[])reader.GetValue(8))}";
+        var fullName = reader.GetString(1);
+        var email = reader.IsDBNull(2) ? null : reader.GetString(2);
+        var phoneNumber = reader.IsDBNull(3) ? null : reader.GetString(3);
+        var employeeId = reader.IsDBNull(4) ? null : reader.GetString(4);
+        var roleName = reader.GetString(5);
+        var homePlantId = reader.GetInt32(6);
+        var homePlantName = reader.GetString(7);
+        await reader.CloseAsync();
+
+        var plants = new List<object>();
+        if (roleName == "Viewer")
+        {
+            const string plantsSql = """
+                SELECT p.PlantId, p.PlantName
+                FROM dbo.Plant p
+                WHERE EXISTS
+                (
+                    SELECT 1
+                    FROM dbo.ViewerAccess va
+                    WHERE va.UserId = @UserId
+                      AND
+                      (
+                          va.AllPlants = 1 AND p.IsActive = 1
+                          OR va.AllPlants = 0 AND EXISTS
+                          (
+                              SELECT 1
+                              FROM dbo.ViewerAccessPlant vap
+                              WHERE vap.UserId = va.UserId
+                                AND vap.PlantId = p.PlantId
+                          )
+                      )
+                )
+                ORDER BY p.PlantName;
+                """;
+            await using var plantsCommand = new SqlCommand(plantsSql, connection);
+            Add(plantsCommand, "@UserId", SqlDbType.Int, userId);
+            await using var plantsReader = await plantsCommand.ExecuteReaderAsync(cancellationToken);
+            while (await plantsReader.ReadAsync(cancellationToken))
+            {
+                plants.Add(new
+                {
+                    plantId = plantsReader.GetInt32(0),
+                    plantName = plantsReader.GetString(1)
+                });
+            }
+        }
+        else
+        {
+            plants.Add(new { plantId = homePlantId, plantName = homePlantName });
+        }
+
         return Ok(new
         {
-            userId = reader.GetInt32(0),
-            fullName = reader.GetString(1),
-            email = reader.IsDBNull(2) ? null : reader.GetString(2),
-            phoneNumber = reader.IsDBNull(3) ? null : reader.GetString(3),
-            roleName = reader.GetString(4),
-            plantId = reader.GetInt32(5),
-            plantName = reader.GetString(6),
+            userId,
+            fullName,
+            email,
+            phoneNumber,
+            employeeId,
+            roleName,
+            plantId = homePlantId,
+            plantName = homePlantName,
+            plants,
             profilePicture = picture
         });
     }

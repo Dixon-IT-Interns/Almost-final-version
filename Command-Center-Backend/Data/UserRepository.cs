@@ -191,6 +191,7 @@ public sealed class UserRepository(SqlConnectionFactory connectionFactory)
                 u.UserId,
                 u.FullName,
                 u.Email,
+                u.EmployeeId,
                 u.RoleId,
                 r.RoleName,
                 u.PlantId,
@@ -222,11 +223,14 @@ public sealed class UserRepository(SqlConnectionFactory connectionFactory)
                         reader.IsDBNull(2)
                             ? null
                             : reader.GetString(2),
-                        reader.GetInt32(3),
-                        reader.GetString(4),
-                        reader.GetInt32(5),
-                        reader.GetString(6),
-                        reader.GetBoolean(7),
+                        reader.IsDBNull(3)
+                            ? null
+                            : reader.GetString(3),
+                        reader.GetInt32(4),
+                        reader.GetString(5),
+                        reader.GetInt32(6),
+                        reader.GetString(7),
+                        reader.GetBoolean(8),
                         []));
             }
         }
@@ -308,6 +312,7 @@ public sealed class UserRepository(SqlConnectionFactory connectionFactory)
                 u.UserId,
                 u.FullName,
                 u.Email,
+                u.EmployeeId,
                 u.RoleId,
                 r.RoleName,
                 u.PlantId,
@@ -345,11 +350,14 @@ public sealed class UserRepository(SqlConnectionFactory connectionFactory)
             reader.IsDBNull(2)
                 ? null
                 : reader.GetString(2),
-            reader.GetInt32(3),
-            reader.GetString(4),
-            reader.GetInt32(5),
-            reader.GetString(6),
-            reader.GetBoolean(7),
+            reader.IsDBNull(3)
+                ? null
+                : reader.GetString(3),
+            reader.GetInt32(4),
+            reader.GetString(5),
+            reader.GetInt32(6),
+            reader.GetString(7),
+            reader.GetBoolean(8),
             []);
 
         await reader.CloseAsync();
@@ -622,6 +630,7 @@ public sealed class UserRepository(SqlConnectionFactory connectionFactory)
                   SET
                       FullName = @FullName,
                       Email = @Email,
+                      EmployeeId = @EmployeeId,
                       RoleId = @RoleId,
                       PlantId = @PlantId
                   WHERE UserId = @UserId
@@ -641,6 +650,7 @@ public sealed class UserRepository(SqlConnectionFactory connectionFactory)
                   SET
                       FullName = @FullName,
                       Email = @Email,
+                      EmployeeId = @EmployeeId,
                       RoleId = @RoleId,
                       PlantId = @PlantId,
                       PasswordHash = @PasswordHash
@@ -668,6 +678,10 @@ public sealed class UserRepository(SqlConnectionFactory connectionFactory)
             command.Parameters.AddWithValue(
                 "@Email",
                 request.Email.Trim());
+
+            command.Parameters.AddWithValue(
+                "@EmployeeId",
+                request.EmployeeId.Trim().ToUpperInvariant());
 
             command.Parameters.AddWithValue(
                 "@RoleId",
@@ -864,6 +878,7 @@ public sealed class UserRepository(SqlConnectionFactory connectionFactory)
                 (
                     FullName,
                     Email,
+                    EmployeeId,
                     PasswordHash,
                     RoleId,
                     PlantId
@@ -872,6 +887,7 @@ public sealed class UserRepository(SqlConnectionFactory connectionFactory)
                 SELECT
                     @FullName,
                     @Email,
+                    @EmployeeId,
                     @PasswordHash,
                     @RoleId,
                     @PlantId
@@ -894,6 +910,10 @@ public sealed class UserRepository(SqlConnectionFactory connectionFactory)
             userCommand.Parameters.AddWithValue(
                 "@Email",
                 request.Email.Trim());
+
+            userCommand.Parameters.AddWithValue(
+                "@EmployeeId",
+                request.EmployeeId.Trim().ToUpperInvariant());
 
             userCommand.Parameters.AddWithValue(
                 "@PasswordHash",

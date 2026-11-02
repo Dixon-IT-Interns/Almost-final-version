@@ -106,6 +106,7 @@ BEGIN
         UserId INT IDENTITY(1,1) PRIMARY KEY,
         FullName VARCHAR(100) NOT NULL,
         Email VARCHAR(150) NULL,
+        EmployeeId VARCHAR(50) NULL,
         PasswordHash VARCHAR(255) NULL,
         PhoneNumber VARCHAR(30) NULL,
         PendingPhoneNumber VARCHAR(30) NULL,
@@ -125,6 +126,18 @@ BEGIN
         CONSTRAINT FK_User_Role FOREIGN KEY (RoleId) REFERENCES dbo.Role(RoleId)
     );
 END;
+GO
+
+IF NOT EXISTS
+(
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.User')
+      AND name = N'UX_User_EmployeeId'
+)
+    CREATE UNIQUE INDEX UX_User_EmployeeId
+        ON dbo.[User](EmployeeId)
+        WHERE EmployeeId IS NOT NULL;
 GO
 
 IF OBJECT_ID(N'dbo.ViewerAccess', N'U') IS NULL
