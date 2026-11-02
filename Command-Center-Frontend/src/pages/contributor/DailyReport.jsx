@@ -331,6 +331,7 @@ export default function DailyReport({ session, onSignOut }) {
       : "production"
   ));
   const [lockedUploadTypes, setLockedUploadTypes] = useState([]);
+  const [hasRedCorrections, setHasRedCorrections] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const excelFileInput = useRef(null);
@@ -391,6 +392,7 @@ export default function DailyReport({ session, onSignOut }) {
     || lockedUploadTypes.includes(uploadType)
     || (uploadType === "all" && lockedUploadTypes.length > 0);
   const uploadLocked = selectedSectionLocked
+    || hasRedCorrections
     || (fieldsForUploadType(uploadType) === null
       ? lockedUploadTypes.length > 0
       : lockedUploadTypes.some((type) => (
@@ -416,6 +418,7 @@ export default function DailyReport({ session, onSignOut }) {
   const loadReport = async (showLoader = true) => {
     const sequence = ++loadSequence.current;
     if (showLoader) setLoading(true);
+    setHasRedCorrections(false);
     setError("");
     try {
       const customers = await api.get("/catalog/customers");
@@ -484,6 +487,9 @@ export default function DailyReport({ session, onSignOut }) {
       if (sequence !== loadSequence.current) return;
       const savedBatchId = result.flatMap(([, data]) => data.entries).find((entry) => entry.submissionBatchId)?.submissionBatchId;
       submissionBatch.current = { key: `${customerId}:${categoryId}:${reportDate}`, id: savedBatchId || "" };
+      setHasRedCorrections((reviewerAnnotations || []).some(
+        (annotation) => annotation.severity === "RED" && !annotation.resolvedAt
+      ));
       setCustomer(foundCustomer);
       setCategory(foundCategory);
       setLines(mergedLines);
@@ -523,36 +529,45 @@ export default function DailyReport({ session, onSignOut }) {
   }, [lineData]);
 
   const updateEntry = (lineId, entryId, field, value) => {
-    setLineData((current) => ({
-      ...current,
-      [lineId]: {
-        ...current[lineId],
-        status: "IN_PROGRESS",
-        entries: current[lineId].entries.map((entry) => {
-          if (entry.entryId !== entryId) return entry;
-          const editedFields = new Set(entry.planEditedFields || []);
-          const validationOverrides = clearValidationOverrides(
-            entry.validationOverrides,
-            [field]
-          );
-          if (KPI_PLAN_FIELDS.includes(field)) {
-            if (NON_NUMERIC_MARKERS.has(String(value).trim().toUpperCase()))
-              editedFields.delete(field);
-            else if (asNumber(value) === asNumber(entry.initialForm?.[field]))
-              editedFields.delete(field);
-            else if (asNumber(value) !== asNumber(entry.form[field]))
-              editedFields.add(field);
-          }
-          return {
-            ...entry,
-            status: entry.status === "APPROVED" ? entry.status : "DRAFT",
-            form: { ...entry.form, [field]: value },
-            planEditedFields: [...editedFields],
-            validationOverrides,
-          };
-        }),
-      },
-    }));
+    setLineData((current) => {
+      const currentLine = current[lineId];
+      if (!currentLine) return current;
+      let changed = false;
+      const entries = currentLine.entries.map((entry) => {
+        if (entry.entryId !== entryId) return entry;
+        if (hasRedCorrections && !entry.annotations?.some(
+            (annotation) => annotation.fieldKey === field
+              && annotation.severity === "RED"
+              && !annotation.resolvedAt
+          )) return entry;
+        changed = true;
+        const editedFields = new Set(entry.planEditedFields || []);
+        const validationOverrides = clearValidationOverrides(
+          entry.validationOverrides,
+          [field]
+        );
+        if (KPI_PLAN_FIELDS.includes(field)) {
+          if (NON_NUMERIC_MARKERS.has(String(value).trim().toUpperCase()))
+            editedFields.delete(field);
+          else if (asNumber(value) === asNumber(entry.initialForm?.[field]))
+            editedFields.delete(field);
+          else if (asNumber(value) !== asNumber(entry.form[field]))
+            editedFields.add(field);
+        }
+        return {
+          ...entry,
+          status: entry.status === "APPROVED" ? entry.status : "DRAFT",
+          form: { ...entry.form, [field]: value },
+          planEditedFields: [...editedFields],
+          validationOverrides,
+        };
+      });
+      if (!changed) return current;
+      return {
+        ...current,
+        [lineId]: { ...currentLine, status: "IN_PROGRESS", entries },
+      };
+    });
     setNotice("");
   };
 
@@ -1267,6 +1282,10 @@ export default function DailyReport({ session, onSignOut }) {
 
   const applyReviewedImport = () => {
     if (!importPreview) return;
+    if (hasRedCorrections) {
+      setError("Excel import is unavailable while only reviewer-marked fields can be corrected.");
+      return;
+    }
     const needsDateConfirmation = importPreview.reportDate !== reportDate;
     if (needsDateConfirmation && !importDateConfirmed) {
       setError(`Confirm the workbook report date before applying the ${category?.categoryName || "production"} rows.`);
@@ -1476,7 +1495,7 @@ export default function DailyReport({ session, onSignOut }) {
             <button
               className="secondary-action report-lock-upload"
               type="button"
-              disabled={loading || !reportLoaded || isImporting || Boolean(busy)}
+              disabled={loading || !reportLoaded || isImporting || Boolean(busy) || hasRedCorrections}
               onClick={selectedSectionLocked ? unlockSelectedUploadType : lockSelectedUploadType}
             >
               {selectedSectionLocked
@@ -1648,7 +1667,7 @@ export default function DailyReport({ session, onSignOut }) {
               </div>
               <div className="excel-review-actions">
                 <span>Included rows are staged in the form only. Use the existing Save Draft or Submit actions after reviewing.</span>
-                <button className="primary-action" type="button" disabled={isImporting || loading || !reportLoaded || importPreview.reportDate !== reportDate} onClick={applyReviewedImport}>Apply reviewed rows to form</button>
+                <button className="primary-action" type="button" disabled={isImporting || loading || !reportLoaded || importPreview.reportDate !== reportDate || hasRedCorrections} onClick={applyReviewedImport}>Apply reviewed rows to form</button>
               </div>
             </section>
           )}
@@ -1676,6 +1695,7 @@ export default function DailyReport({ session, onSignOut }) {
                   busy={busy}
                   loading={loading}
                   lockedUploadTypes={lockedUploadTypes}
+                  hasRedCorrections={hasRedCorrections}
                   onValidationOverride={setValidationOverride}
                 />
               </div>
@@ -1685,7 +1705,7 @@ export default function DailyReport({ session, onSignOut }) {
                   const data = lineData[line.lineId] || { entries: [], models: [] };
                   const available = (data.models || []).filter((m) => !data.entries.some((e) => String(e.modelId) === String(m.modelId)));
                   if (!available.length) return null;
-                  return <div className="line-add-model" key={line.lineId}><strong>{line.lineName}</strong><AddModelSelect models={available} onSelect={(id) => addModel(line.lineId, id)} disabled={!data.isActive || Boolean(busy)} /></div>;
+                  return <div className="line-add-model" key={line.lineId}><strong>{line.lineName}</strong><AddModelSelect models={available} onSelect={(id) => addModel(line.lineId, id)} disabled={!data.isActive || Boolean(busy) || hasRedCorrections} /></div>;
                 })}
               </div>
 
@@ -1724,7 +1744,7 @@ function AddModelSelect({ models, onSelect, disabled }) {
   return <label className="add-model-control"><Plus size={13} /><select value="" onChange={(e) => onSelect(e.target.value)} disabled={disabled}><option value="">Add model</option>{models.map((model) => <option key={model.modelId} value={model.modelId}>{model.modelName}</option>)}</select></label>;
 }
 
-function MatrixTable({ groups, lines, lineData, onChange, onAddModel, onRemoveModel, onDeleteDraft, onToggleLine, busy, loading, lockedUploadTypes, onValidationOverride }) {
+function MatrixTable({ groups, lines, lineData, onChange, onAddModel, onRemoveModel, onDeleteDraft, onToggleLine, busy, loading, lockedUploadTypes, hasRedCorrections, onValidationOverride }) {
   const columns = lines.flatMap((line) => {
     const entries = lineData[line.lineId]?.entries || [];
     return entries.length
@@ -1757,7 +1777,7 @@ function MatrixTable({ groups, lines, lineData, onChange, onAddModel, onRemoveMo
                   className="matrix-line-toggle"
                   aria-label={`${data.isActive === false ? "Activate" : "Deactivate"} ${line.lineName}`}
                   title={hasSubmittedEntries ? "Submitted or approved reports prevent line deactivation." : `${data.isActive === false ? "Activate" : "Deactivate"} this line for the selected report date`}
-                  disabled={Boolean(busy) || loading || (data.isActive !== false && hasSubmittedEntries)}
+                  disabled={Boolean(busy) || loading || hasRedCorrections || (data.isActive !== false && hasSubmittedEntries)}
                   onClick={() => onToggleLine(line)}
                 >
                   {busy === `line-status-${line.lineId}`
@@ -1773,7 +1793,7 @@ function MatrixTable({ groups, lines, lineData, onChange, onAddModel, onRemoveMo
             const data = lineData[line.lineId] || { entries: [], models: [], isActive: true };
             if (!data.entries.length)
               return <th key={line.lineId} className="model-head empty-model-head">
-                <AddModelSelect models={data.models || []} onSelect={(id) => onAddModel(line.lineId, id)} disabled={data.isActive === false || Boolean(busy)} />
+                <AddModelSelect models={data.models || []} onSelect={(id) => onAddModel(line.lineId, id)} disabled={data.isActive === false || Boolean(busy) || hasRedCorrections} />
               </th>;
             return data.entries.map((entry) => (
               <th key={entry.entryId} className="model-head" data-entry-id={entry.entryId}>
@@ -1785,8 +1805,8 @@ function MatrixTable({ groups, lines, lineData, onChange, onAddModel, onRemoveMo
                   {entry.planStatus === "error" && <small className="plan-status error" title={entry.planError}>KPI plan unavailable; daily report remains editable.</small>}
                   {entry.planStatus === "ambiguous" && <small className="plan-status ambiguous" title={entry.planError}>Multiple monthly plans match; targets not prefilled.</small>}
                   {entry.isNew
-                    ? <button onClick={() => onRemoveModel(line.lineId, entry.entryId)} disabled={Boolean(busy)} title="Remove model"><Trash2 size={13} /></button>
-                    : ["DRAFT", "REJECTED"].includes(entry.status) && <button onClick={() => onDeleteDraft(line.lineId, entry)} disabled={Boolean(busy)} title="Delete saved draft" aria-label={`Delete saved draft for ${entry.modelName}`}><Trash2 size={13} /></button>}
+                    ? <button onClick={() => onRemoveModel(line.lineId, entry.entryId)} disabled={Boolean(busy) || hasRedCorrections} title="Remove model"><Trash2 size={13} /></button>
+                    : ["DRAFT", "REJECTED"].includes(entry.status) && <button onClick={() => onDeleteDraft(line.lineId, entry)} disabled={Boolean(busy) || hasRedCorrections} title="Delete saved draft" aria-label={`Delete saved draft for ${entry.modelName}`}><Trash2 size={13} /></button>}
                 </div>
               </th>
             ));
@@ -1795,13 +1815,13 @@ function MatrixTable({ groups, lines, lineData, onChange, onAddModel, onRemoveMo
     </thead>
     <tbody>
       {groups.map((group) => (
-        <MatrixGroup key={group.title} group={group} columns={columns} lineData={lineData} onChange={onChange} lockedUploadTypes={lockedUploadTypes} onValidationOverride={onValidationOverride} busy={busy} />
+      <MatrixGroup key={group.title} group={group} columns={columns} lineData={lineData} onChange={onChange} lockedUploadTypes={lockedUploadTypes} hasRedCorrections={hasRedCorrections} onValidationOverride={onValidationOverride} busy={busy} />
       ))}
     </tbody>
   </table>;
 }
 
-function MatrixGroup({ group, columns, lineData, onChange, lockedUploadTypes, onValidationOverride, busy }) {
+function MatrixGroup({ group, columns, lineData, onChange, lockedUploadTypes, hasRedCorrections, onValidationOverride, busy }) {
   return <>
     <tr className="group-row">
       <th className="sticky-col group-label">{group.title}</th>
@@ -1814,7 +1834,13 @@ function MatrixGroup({ group, columns, lineData, onChange, lockedUploadTypes, on
         return <td className="matrix-cell" key={`${row.label}-${entry.entryId}`}>
           <div className="matrix-values-grid">
             {row.fields.map(({ key, label }) => {
+              const isRedCorrectionField = entry.annotations?.some(
+                (annotation) => annotation.fieldKey === key
+                  && annotation.severity === "RED"
+                  && !annotation.resolvedAt
+              );
               const disabled = isFieldLocked(key, lockedUploadTypes)
+                || (hasRedCorrections && !isRedCorrectionField)
                 || Boolean(busy)
                 || entry.status === "APPROVED"
                 || entry.status === "SUBMITTED"

@@ -1,4 +1,5 @@
 using System.Data;
+using System.Diagnostics;
 using System.Security.Claims;
 using System.Text.Json;
 using Dixon.CommandCenter.API.Data;
@@ -97,106 +98,237 @@ public sealed class ApprovalController(
         if (plantId <= 0)
             return Unauthorized();
 
-        await using var connection =
-            await connectionFactory.OpenAsync(cancellationToken);
-
-        const string sql = """
-            SELECT
-                aq.ApprovalQueueId,
-                aq.DailyReportId,
-                aq.Status,
-                aq.SubmittedAt,
-                dr.ReportDate,
-                c.CustomerName,
-                cat.CategoryName,
-                pl.LineName,
-                m.ModelName,
-                u.FullName AS SubmittedByName,
-                dr.SubmissionBatchId,
-                CASE WHEN dr.SubmissionBatchEnforced=1 THEN
-                    (SELECT COUNT(1) FROM DailyReport other
-                     WHERE other.PlantId=dr.PlantId AND other.ReportDate=dr.ReportDate AND other.CustomerId=dr.CustomerId
-                       AND other.CreatedBy=dr.CreatedBy AND other.IsActive=1 AND other.ModelId IS NOT NULL
-                       AND ((EXISTS(SELECT 1 FROM DailyReport batchPeer WHERE batchPeer.SubmissionBatchId=dr.SubmissionBatchId AND batchPeer.CategoryId<>dr.CategoryId)
-                             AND other.CategoryId IN (SELECT scopeCategory.CategoryId FROM Category scopeCategory
-                                 WHERE scopeCategory.PlantId=dr.PlantId AND scopeCategory.CustomerId=dr.CustomerId
-                                   AND scopeCategory.IsActive=1 AND UPPER(scopeCategory.CategoryName) IN ('FATP','SMT')))
-                         OR (NOT EXISTS(SELECT 1 FROM DailyReport batchPeer WHERE batchPeer.SubmissionBatchId=dr.SubmissionBatchId AND batchPeer.CategoryId<>dr.CategoryId)
-                             AND other.CategoryId=dr.CategoryId))
-                       AND other.Status NOT IN ('APPROVED','INACTIVE')
-                       AND (other.Status<>'SUBMITTED' OR other.SubmissionBatchId<>dr.SubmissionBatchId))
-                    + (SELECT COUNT(1) FROM ProductionLine pl INNER JOIN Category cat ON cat.CategoryId=pl.CategoryId
-                       WHERE pl.PlantId=dr.PlantId AND pl.IsActive=1 AND cat.PlantId=dr.PlantId AND cat.CustomerId=dr.CustomerId
-                         AND cat.IsActive=1
-                         AND ((EXISTS(SELECT 1 FROM DailyReport batchPeer WHERE batchPeer.SubmissionBatchId=dr.SubmissionBatchId AND batchPeer.CategoryId<>dr.CategoryId)
-                               AND UPPER(cat.CategoryName) IN ('FATP','SMT'))
-                           OR (NOT EXISTS(SELECT 1 FROM DailyReport batchPeer WHERE batchPeer.SubmissionBatchId=dr.SubmissionBatchId AND batchPeer.CategoryId<>dr.CategoryId)
-                               AND cat.CategoryId=dr.CategoryId))
-                         AND NOT EXISTS(SELECT 1 FROM DailyReport lineState WHERE lineState.PlantId=dr.PlantId AND lineState.ReportDate=dr.ReportDate
-                           AND lineState.CustomerId=dr.CustomerId AND lineState.CategoryId=cat.CategoryId AND lineState.LineId=pl.LineId
-                           AND lineState.CreatedBy=dr.CreatedBy AND ((lineState.ModelId IS NULL AND lineState.IsActive=0) OR (lineState.ModelId IS NOT NULL AND lineState.IsActive=1))))
-                    ELSE 0 END AS IncompleteCount
-            FROM ApprovalQueue aq
-            INNER JOIN DailyReport dr
-                ON dr.DailyReportId = aq.DailyReportId
-            INNER JOIN Customer c
-                ON c.CustomerId = dr.CustomerId
-            INNER JOIN Category cat
-                ON cat.CategoryId = dr.CategoryId
-            INNER JOIN ProductionLine pl
-                ON pl.LineId = dr.LineId
-            LEFT JOIN Model m
-                ON m.ModelId = dr.ModelId
-            INNER JOIN [User] u
-                ON u.UserId = aq.SubmittedBy
-            INNER JOIN UserCustomer uc
-                ON uc.CustomerId = dr.CustomerId
-               AND uc.UserId = @UserId
-            INNER JOIN PlantCustomer pc
-                ON pc.PlantId = dr.PlantId
-               AND pc.CustomerId = dr.CustomerId
-            WHERE aq.Status = 'PENDING'
-              AND dr.Status = 'SUBMITTED'
-              AND dr.PlantId = @PlantId
-            ORDER BY aq.SubmittedAt ASC;
-            """;
-
-        await using var command = new SqlCommand(sql, connection);
-
-        Add(command, "@UserId", SqlDbType.Int, userId);
-        Add(command, "@PlantId", SqlDbType.Int, plantId);
-
-        var rows = new List<object>();
-
-        await using var reader =
-            await command.ExecuteReaderAsync(cancellationToken);
-
-        while (await reader.ReadAsync(cancellationToken))
+        var stopwatch = Stopwatch.StartNew();
+        try
         {
-            rows.Add(new
+            await using var connection =
+                await connectionFactory.OpenAsync(cancellationToken);
+
+            const string sql = """
+                WITH PendingRows AS
+                (
+                    SELECT
+                        aq.ApprovalQueueId,
+                        aq.DailyReportId,
+                        aq.Status,
+                        aq.SubmittedAt,
+                        dr.ReportDate,
+                        c.CustomerName,
+                        cat.CategoryName,
+                        pl.LineName,
+                        m.ModelName,
+                        u.FullName AS SubmittedByName,
+                        dr.SubmissionBatchId,
+                        dr.PlantId,
+                        dr.CustomerId,
+                        dr.CreatedBy,
+                        dr.CategoryId,
+                        dr.SubmissionBatchEnforced,
+                        CONVERT(bit, CASE WHEN EXISTS
+                        (
+                            SELECT 1
+                            FROM DailyReport batchPeer
+                            WHERE batchPeer.SubmissionBatchId=dr.SubmissionBatchId
+                              AND batchPeer.CategoryId<>dr.CategoryId
+                        ) THEN 1 ELSE 0 END) AS AcrossCategories
+                    FROM ApprovalQueue aq
+                    INNER JOIN DailyReport dr ON dr.DailyReportId=aq.DailyReportId
+                    INNER JOIN Customer c ON c.CustomerId=dr.CustomerId
+                    INNER JOIN Category cat ON cat.CategoryId=dr.CategoryId
+                    INNER JOIN ProductionLine pl ON pl.LineId=dr.LineId
+                    LEFT JOIN Model m ON m.ModelId=dr.ModelId
+                    INNER JOIN [User] u ON u.UserId=aq.SubmittedBy
+                    INNER JOIN UserCustomer uc ON uc.CustomerId=dr.CustomerId AND uc.UserId=@UserId
+                    INNER JOIN PlantCustomer pc ON pc.PlantId=dr.PlantId AND pc.CustomerId=dr.CustomerId
+                    WHERE aq.Status='PENDING'
+                      AND dr.Status='SUBMITTED'
+                      AND dr.PlantId=@PlantId
+                ),
+                PendingScopes AS
+                (
+                    SELECT DISTINCT
+                        PlantId,
+                        ReportDate,
+                        CustomerId,
+                        CreatedBy,
+                        SubmissionBatchId,
+                        SubmissionBatchEnforced,
+                        AcrossCategories,
+                        CASE WHEN AcrossCategories=1 THEN NULL ELSE CategoryId END AS ScopeCategoryId
+                    FROM PendingRows
+                ),
+                PendingIncompleteCounts AS
+                (
+                    SELECT
+                        scope.PlantId,
+                        scope.ReportDate,
+                        scope.CustomerId,
+                        scope.CreatedBy,
+                        scope.SubmissionBatchId,
+                        scope.SubmissionBatchEnforced,
+                        scope.AcrossCategories,
+                        scope.ScopeCategoryId,
+                        CASE WHEN scope.SubmissionBatchEnforced=1 THEN
+                            (SELECT COUNT(1)
+                             FROM DailyReport other
+                             WHERE other.PlantId=scope.PlantId
+                               AND other.ReportDate=scope.ReportDate
+                               AND other.CustomerId=scope.CustomerId
+                               AND other.CreatedBy=scope.CreatedBy
+                               AND other.IsActive=1
+                               AND other.ModelId IS NOT NULL
+                               AND ((scope.AcrossCategories=1 AND other.CategoryId IN
+                                    (SELECT scopeCategory.CategoryId
+                                     FROM Category scopeCategory
+                                     WHERE scopeCategory.PlantId=scope.PlantId
+                                       AND scopeCategory.CustomerId=scope.CustomerId
+                                       AND scopeCategory.IsActive=1
+                                       AND UPPER(scopeCategory.CategoryName) IN ('FATP','SMT')))
+                                 OR (scope.AcrossCategories=0 AND other.CategoryId=scope.ScopeCategoryId))
+                               AND other.Status NOT IN ('APPROVED','INACTIVE')
+                               AND (other.Status<>'SUBMITTED' OR other.SubmissionBatchId<>scope.SubmissionBatchId))
+                            + (SELECT COUNT(1)
+                               FROM ProductionLine pl
+                               INNER JOIN Category cat ON cat.CategoryId=pl.CategoryId
+                               WHERE pl.PlantId=scope.PlantId
+                                 AND pl.IsActive=1
+                                 AND cat.PlantId=scope.PlantId
+                                 AND cat.CustomerId=scope.CustomerId
+                                 AND cat.IsActive=1
+                                 AND ((scope.AcrossCategories=1 AND UPPER(cat.CategoryName) IN ('FATP','SMT'))
+                                   OR (scope.AcrossCategories=0 AND cat.CategoryId=scope.ScopeCategoryId))
+                                 AND NOT EXISTS
+                                 (
+                                     SELECT 1
+                                     FROM DailyReport lineState
+                                     WHERE lineState.PlantId=scope.PlantId
+                                       AND lineState.ReportDate=scope.ReportDate
+                                       AND lineState.CustomerId=scope.CustomerId
+                                       AND lineState.CategoryId=cat.CategoryId
+                                       AND lineState.LineId=pl.LineId
+                                       AND lineState.CreatedBy=scope.CreatedBy
+                                       AND ((lineState.ModelId IS NULL AND lineState.IsActive=0)
+                                         OR (lineState.ModelId IS NOT NULL AND lineState.IsActive=1))
+                                 ))
+                            ELSE 0 END AS IncompleteCount
+                    FROM PendingScopes scope
+                )
+                SELECT
+                    pending.ApprovalQueueId,
+                    pending.DailyReportId,
+                    pending.Status,
+                    pending.SubmittedAt,
+                    pending.ReportDate,
+                    pending.CustomerName,
+                    pending.CategoryName,
+                    pending.LineName,
+                    pending.ModelName,
+                    pending.SubmittedByName,
+                    pending.SubmissionBatchId,
+                    incomplete.IncompleteCount
+                FROM PendingRows pending
+                INNER JOIN PendingIncompleteCounts incomplete
+                    ON incomplete.PlantId=pending.PlantId
+                   AND incomplete.ReportDate=pending.ReportDate
+                   AND incomplete.CustomerId=pending.CustomerId
+                   AND incomplete.CreatedBy=pending.CreatedBy
+                   AND incomplete.SubmissionBatchEnforced=pending.SubmissionBatchEnforced
+                   AND incomplete.AcrossCategories=pending.AcrossCategories
+                   AND (incomplete.ScopeCategoryId=pending.CategoryId
+                     OR (incomplete.ScopeCategoryId IS NULL AND pending.AcrossCategories=1))
+                   AND (incomplete.SubmissionBatchId=pending.SubmissionBatchId
+                     OR (incomplete.SubmissionBatchId IS NULL AND pending.SubmissionBatchId IS NULL))
+                ORDER BY pending.SubmittedAt ASC;
+                """;
+
+            await using var command = new SqlCommand(sql, connection);
+            Add(command, "@UserId", SqlDbType.Int, userId);
+            Add(command, "@PlantId", SqlDbType.Int, plantId);
+
+            var rows = new List<object>();
+
+            await using var reader =
+                await command.ExecuteReaderAsync(cancellationToken);
+
+            while (await reader.ReadAsync(cancellationToken))
             {
-                approvalQueueId = reader.GetInt32(0),
-                dailyReportId = reader.GetInt32(1),
-                status = reader.GetString(2),
-                submittedAt = reader.GetDateTime(3),
-                reportDate = reader.GetDateTime(4).Date,
+                rows.Add(new
+                {
+                    approvalQueueId = reader.GetInt32(0),
+                    dailyReportId = reader.GetInt32(1),
+                    status = reader.GetString(2),
+                    submittedAt = reader.GetDateTime(3),
+                    reportDate = reader.GetDateTime(4).Date,
+                    customerName = reader.GetString(5),
+                    categoryName = reader.GetString(6),
+                    lineName = reader.GetString(7),
+                    modelName = reader.IsDBNull(8) ? null : reader.GetString(8),
+                    submittedBy = reader.GetString(9),
+                    submissionBatchId = reader.IsDBNull(10) ? (Guid?)null : reader.GetGuid(10),
+                    incompleteCount = reader.GetInt32(11)
+                });
+            }
 
-                customerName = reader.GetString(5),
-                categoryName = reader.GetString(6),
-                lineName = reader.GetString(7),
+            logger.LogInformation(
+                "Loaded approver pending queue. UserId={UserId}, PlantId={PlantId}, RowCount={RowCount}, ElapsedMs={ElapsedMs}, CommandTimeoutSeconds={CommandTimeoutSeconds}",
+                userId,
+                plantId,
+                rows.Count,
+                stopwatch.ElapsedMilliseconds,
+                command.CommandTimeout);
 
-                modelName =
-                    reader.IsDBNull(8)
-                        ? null
-                        : reader.GetString(8),
-
-                submittedBy = reader.GetString(9),
-                submissionBatchId = reader.IsDBNull(10) ? (Guid?)null : reader.GetGuid(10),
-                incompleteCount = reader.GetInt32(11)
-            });
+            return Ok(rows);
         }
-
-        return Ok(rows);
+        catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogInformation(
+                exception,
+                "Approver pending queue cancelled because the HTTP request was aborted. UserId={UserId}, PlantId={PlantId}, RequestAborted={RequestAborted}, ElapsedMs={ElapsedMs}",
+                userId,
+                plantId,
+                HttpContext.RequestAborted.IsCancellationRequested,
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+        catch (SqlException exception) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogInformation(
+                exception,
+                "SQL command for approver pending queue was cancelled after the HTTP request was aborted. UserId={UserId}, PlantId={PlantId}, SqlNumber={SqlNumber}, SqlState={SqlState}, ElapsedMs={ElapsedMs}",
+                userId,
+                plantId,
+                exception.Number,
+                exception.State,
+                stopwatch.ElapsedMilliseconds);
+            throw new OperationCanceledException(
+                "The pending approval request was aborted by the client.",
+                exception,
+                cancellationToken);
+        }
+        catch (SqlException exception)
+        {
+            logger.LogError(
+                exception,
+                "SQL command for approver pending queue failed. UserId={UserId}, PlantId={PlantId}, SqlNumber={SqlNumber}, SqlState={SqlState}, SqlClass={SqlClass}, IsCommandTimeout={IsCommandTimeout}, ElapsedMs={ElapsedMs}",
+                userId,
+                plantId,
+                exception.Number,
+                exception.State,
+                exception.Class,
+                exception.Number == -2,
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+        catch (OperationCanceledException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Approver pending queue was cancelled without an aborted HTTP request. UserId={UserId}, PlantId={PlantId}, ElapsedMs={ElapsedMs}",
+                userId,
+                plantId,
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
     }
 
 

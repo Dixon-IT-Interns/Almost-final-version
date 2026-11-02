@@ -1,0 +1,297 @@
+@media (max-width: 820px) {
+  .portal-layout,
+  .portal-layout.is-expanded {
+    --portal-sidebar-width: 56px;
+    display: block;
+    min-height: 100dvh;
+  }
+
+  .portal-sidebar {
+    position: fixed;
+    z-index: 90;
+    inset: 0 auto 0 0;
+    width: var(--portal-sidebar-width);
+    height: 100dvh;
+    min-height: 0;
+    padding: 8px 5px;
+  }
+
+  .portal-layout.is-expanded .portal-sidebar {
+    width: min(205px, calc(100vw - 56px));
+    box-shadow: 8px 0 28px rgb(17 24 32 / 22%);
+  }
+
+  .portal-main-column {
+    width: calc(100% - 56px);
+    min-width: 0;
+    margin-left: 56px;
+  }
+
+  .portal-content,
+  .portal-content.approver-main,
+  .portal-content.admin-main,
+  .portal-content.dashboard-main,
+  .portal-content.notifications-main,
+  .portal-content.profile-main,
+  .portal-content.viewer-main {
+    width: calc(100% - 20px);
+    max-width: 100%;
+    min-width: 0;
+    margin-right: auto;
+    margin-left: auto;
+    padding-top: 18px;
+    padding-bottom: 32px;
+  }
+
+  header.header {
+    width: calc(100% - 12px);
+    min-width: 0;
+    min-height: 56px;
+    margin: 6px;
+    gap: 5px;
+  }
+
+  header.header .header-brand {
+    min-width: 0;
+    width: auto;
+    flex: 1 1 auto;
+  }
+
+  header.header .header-right {
+    min-width: 0;
+    gap: 5px;
+  }
+
+  header.header .header-mobile-toggle,
+  header.header .header-notifications,
+  header.header .header-account,
+  .portal-sidebar-toggle {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .portal-content :is(input, select, textarea) {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .portal-content :is(.admin-table-wrap, .approver-table-wrap, .ah-table-wrap, .matrix-scroll, .report-table-wrap) {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .approver-toolbar {
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .approver-toolbar > label {
+    min-width: 0;
+    flex: 1 1 145px;
+  }
+
+  .approver-toolbar input,
+  .approver-toolbar select,
+  .approver-search {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .approver-search input {
+    min-width: 0;
+  }
+
+  .approver-trend {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .approver-trend-item {
+    flex: 0 0 34px;
+  }
+
+  .approver-dashboard-grid > *,
+  .approver-review-layout > *,
+  .approver-panel,
+  .approver-review-detail,
+  .approver-chart {
+    min-width: 0;
+  }
+
+  .approver-pager {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .approver-pager button,
+  .ah-head button,
+  .ah-toolbar a,
+  .notifications-heading button {
+    min-height: 44px;
+  }
+
+  .login-options {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .login-options > * {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .daily-report-content,
+  .daily-report-page,
+  .notifications-page,
+  .contributor-dashboard,
+  .approval-history-page {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .matrix-scroll {
+    touch-action: pan-x pan-y;
+  }
+
+  .matrix-value-field input,
+  .matrix-value-field textarea {
+    min-height: 40px;
+  }
+
+  .matrix-line-toggle,
+  .model-head-content > button,
+  .matrix-add-model-bar button,
+  .date-report-actions button,
+  .cd-header-actions button,
+  .cd-header-actions a,
+  .line-selection-card button,
+  .line-card button,
+  .profile-page button,
+  .notifications-list .notification-card > a {
+    min-height: 44px;
+  }
+
+  .notification-content {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .notification-content > p,
+  .notification-meta {
+    overflow-wrap: anywhere;
+  }
+
+  .notification-card > a {
+    white-space: normal;
+  }
+
+  .ah-head,
+  .notifications-heading,
+  .cd-header {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .ah-head h1,
+  .notifications-heading h1,
+  .cd-header h1 {
+    overflow-wrap: anywhere;
+  }
+
+  .profile-card,
+  .profile-page,
+  .notification-card,
+  .cd-panel,
+  .cd-stat,
+  .line-selection-card {
+    min-width: 0;
+  }
+
+  .profile-card :is(p, dd, small),
+  .line-selection-card :is(p, strong, small) {
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 560px) {
+  header.header .header-date {
+    display: none;
+  }
+
+  header.header .header-account-copy {
+    display: none;
+  }
+
+  .portal-content :is(.approver-page-heading, .approver-section-head, .cd-panel-head) {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .portal-content :is(.approver-page-heading h1, .approver-section-head h2, .cd-panel-head h2) {
+    overflow-wrap: anywhere;
+  }
+
+  .approver-review-buttons,
+  .approver-annotation-editor-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .approver-annotation-editor-row > * {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .notification-card {
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .notification-card > a {
+    margin-left: 50px;
+  }
+
+  .cd-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 420px) {
+  .login-card {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .login-options {
+    justify-content: flex-start;
+    gap: 4px 12px;
+  }
+
+  .login-options > * {
+    flex: 1 1 100%;
+  }
+
+  .portal-content,
+  .portal-content.approver-main,
+  .portal-content.admin-main,
+  .portal-content.dashboard-main,
+  .portal-content.notifications-main,
+  .portal-content.profile-main,
+  .portal-content.viewer-main {
+    width: calc(100% - 14px);
+  }
+
+  .approver-toolbar > label {
+    flex-basis: 100%;
+  }
+
+  .cd-stat-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
