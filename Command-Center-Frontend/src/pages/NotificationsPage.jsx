@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Bell, CalendarDays, Clock3, FileText, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { groupApproverNotificationsByDate } from "../approvalNotifications";
 import PortalLayout from "../components/PortalLayout";
 import "./NotificationsPage.css";
 
@@ -23,7 +24,13 @@ export default function NotificationsPage({ session, onSignOut }) {
     }
   }, [session.user.roleName]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadNotifications(); }, [loadNotifications]);
+
+  const isApprover = session.user.roleName === "Approver";
+  const displayedNotifications = isApprover
+    ? groupApproverNotificationsByDate(notifications)
+    : notifications;
 
   return (
     <PortalLayout user={session.user} onSignOut={onSignOut} contentClassName="notifications-main">
@@ -32,7 +39,7 @@ export default function NotificationsPage({ session, onSignOut }) {
           <div>
             <span className="notifications-eyebrow">APPROVER WORKSPACE</span>
             <h1>Notifications</h1>
-            <p>{session.user.roleName === "Approver" ? "New report submissions for the customers you review." : "Updates about rejected reports and missing daily reports."}</p>
+            <p>{isApprover ? "Pending report counts grouped by report date for the customers you review." : "Updates about rejected reports and missing daily reports."}</p>
           </div>
           <button type="button" onClick={loadNotifications} disabled={loading}>
             <RefreshCw size={15} className={loading ? "notifications-spin" : ""} />
@@ -50,22 +57,22 @@ export default function NotificationsPage({ session, onSignOut }) {
             </section>
           ) : (
             <section className="notifications-list" aria-label="Pending report notifications">
-              {notifications.map((item) => (
-                <article className="notification-card" key={item.approvalQueueId}>
+              {displayedNotifications.map((item) => (
+                <article className="notification-card" key={isApprover ? item.reportDate : item.approvalQueueId}>
                   <span className="notification-icon"><FileText size={19} /></span>
                   <div className="notification-content">
                     <div className="notification-title-row">
-                      <h2>{session.user.roleName === "Approver" ? `${item.submittedBy} submitted a report` : item.type === "REJECTED" ? "Your report was rejected" : "Daily report is missing"}</h2>
-                      <span className="notification-status">{session.user.roleName === "Approver" ? "Pending review" : item.type === "REJECTED" ? "Action needed" : "Reminder"}</span>
+                      <h2>{isApprover ? `${item.count} pending report${item.count === 1 ? "" : "s"}` : item.type === "REJECTED" ? "Your report was rejected" : "Daily report is missing"}</h2>
+                      <span className="notification-status">{isApprover ? "Pending review" : item.type === "REJECTED" ? "Action needed" : "Reminder"}</span>
                     </div>
-                    {session.user.roleName === "Approver" ? <p>{item.customerName} · {item.categoryName} · {item.lineName}{item.modelName ? ` · ${item.modelName}` : ""}</p> : <p>{item.message}{item.customerName ? ` (${item.customerName} · ${item.categoryName} · ${item.lineName}${item.modelName ? ` · ${item.modelName}` : ""})` : ""}</p>}
+                    {isApprover ? <p>Reports submitted for approval on this date.</p> : <p>{item.message}{item.customerName ? ` (${item.customerName} · ${item.categoryName} · ${item.lineName}${item.modelName ? ` · ${item.modelName}` : ""})` : ""}</p>}
                     <div className="notification-meta">
-                      <span><CalendarDays size={14} /> Report date: {new Date(item.reportDate).toLocaleDateString()}</span>
-                      {item.submittedAt && <span><Clock3 size={14} /> Submitted: {new Date(item.submittedAt).toLocaleString()}</span>}
+                      <span><CalendarDays size={14} /> Report date: {item.reportDate === "unknown" ? "Unknown date" : new Date(`${String(item.reportDate).slice(0, 10)}T00:00:00`).toLocaleDateString("en-IN")}</span>
+                      {!isApprover && item.submittedAt && <span><Clock3 size={14} /> Submitted: {new Date(item.submittedAt).toLocaleString()}</span>}
                       {!item.submittedAt && item.createdAt && <span><Clock3 size={14} /> Rejected: {new Date(item.createdAt).toLocaleString()}</span>}
                     </div>
                   </div>
-                  <Link to={session.user.roleName === "Approver" ? "/approvals" : item.link}>{session.user.roleName === "Approver" ? "Review report" : item.type === "REJECTED" ? "View reports" : "Create report"}</Link>
+                  <Link to={isApprover ? "/approvals" : item.link}>{isApprover ? "Review reports" : item.type === "REJECTED" ? "View reports" : "Create report"}</Link>
                 </article>
               ))}
             </section>

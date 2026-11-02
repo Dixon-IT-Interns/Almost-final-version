@@ -20,10 +20,10 @@ public sealed class ApproverDashboardController(SqlConnectionFactory connectionF
         if(start>end)return BadRequest(new{message="Start date must be on or before end date."});
         await using var connection=await connectionFactory.OpenAsync(cancellationToken);
         const string totalsSql="""
-            SELECT COUNT(DISTINCT dr.DailyReportId) totalReports,
-                COUNT(DISTINCT CASE WHEN aq.Status='PENDING' AND dr.Status='SUBMITTED' THEN dr.DailyReportId END) pending,
-                COUNT(DISTINCT CASE WHEN dr.Status='APPROVED' THEN dr.DailyReportId END) approved,
-                COUNT(DISTINCT CASE WHEN dr.Status='REJECTED' THEN dr.DailyReportId END) rejected,
+            SELECT COUNT(DISTINCT CONCAT(CONVERT(char(10),dr.ReportDate,23),'|',dr.CustomerId,'|',dr.CreatedBy)) totalReports,
+                COUNT(DISTINCT CASE WHEN aq.Status='PENDING' AND dr.Status='SUBMITTED' THEN CONCAT(CONVERT(char(10),dr.ReportDate,23),'|',dr.CustomerId,'|',dr.CreatedBy) END) pending,
+                COUNT(DISTINCT CASE WHEN dr.Status='APPROVED' THEN CONCAT(CONVERT(char(10),dr.ReportDate,23),'|',dr.CustomerId,'|',dr.CreatedBy) END) approved,
+                COUNT(DISTINCT CASE WHEN dr.Status='REJECTED' THEN CONCAT(CONVERT(char(10),dr.ReportDate,23),'|',dr.CustomerId,'|',dr.CreatedBy) END) rejected,
                 COALESCE(SUM(CASE WHEN dr.ReportDate=@Today AND dr.Status='APPROVED' THEN dr.ProductionPlan ELSE 0 END),0) todayTarget,
                 COALESCE(SUM(CASE WHEN dr.ReportDate=@Today AND dr.Status='APPROVED' THEN dr.ProductionActual ELSE 0 END),0) todayActual
             FROM DailyReport dr
@@ -35,7 +35,7 @@ public sealed class ApproverDashboardController(SqlConnectionFactory connectionF
         await using var totals=new SqlCommand(totalsSql,connection);Add(totals,"@UserId",SqlDbType.Int,userId);Add(totals,"@PlantId",SqlDbType.Int,plantId);Add(totals,"@Today",SqlDbType.Date,DateTime.Today);Add(totals,"@Start",SqlDbType.Date,start);Add(totals,"@End",SqlDbType.Date,end);
         object? summary=null;await using(var r=await totals.ExecuteReaderAsync(cancellationToken)){if(await r.ReadAsync(cancellationToken))summary=new{totalReports=r.GetInt32(0),pending=r.GetInt32(1),approved=r.GetInt32(2),rejected=r.GetInt32(3),todayTarget=Convert.ToDecimal(r.GetValue(4)),todayActual=Convert.ToDecimal(r.GetValue(5))};}
         const string categorySql="""
-            SELECT UPPER(cat.CategoryName),COUNT(1),COALESCE(SUM(dr.ProductionPlan),0),COALESCE(SUM(dr.ProductionActual),0)
+            SELECT UPPER(cat.CategoryName),COUNT(DISTINCT CONCAT(CONVERT(char(10),dr.ReportDate,23),'|',dr.CustomerId,'|',dr.CreatedBy)),COALESCE(SUM(dr.ProductionPlan),0),COALESCE(SUM(dr.ProductionActual),0)
             FROM DailyReport dr INNER JOIN Category cat ON cat.CategoryId=dr.CategoryId
             INNER JOIN UserCustomer uc ON uc.CustomerId=dr.CustomerId AND uc.UserId=@UserId
             INNER JOIN PlantCustomer pc ON pc.PlantId=dr.PlantId AND pc.CustomerId=dr.CustomerId
@@ -44,7 +44,7 @@ public sealed class ApproverDashboardController(SqlConnectionFactory connectionF
             """;
         var performance=new Dictionary<string,object>();await using(var c=new SqlCommand(categorySql,connection)){Add(c,"@UserId",SqlDbType.Int,userId);Add(c,"@PlantId",SqlDbType.Int,plantId);Add(c,"@Start",SqlDbType.Date,start);Add(c,"@End",SqlDbType.Date,end);await using var r=await c.ExecuteReaderAsync(cancellationToken);while(await r.ReadAsync(cancellationToken))performance[r.GetString(0)]=new{reports=r.GetInt32(1),target=Convert.ToDecimal(r.GetValue(2)),actual=Convert.ToDecimal(r.GetValue(3))};}
         const string trendSql="""
-            SELECT dr.ReportDate,COALESCE(SUM(dr.ProductionPlan),0),COALESCE(SUM(dr.ProductionActual),0),COUNT(1)
+            SELECT dr.ReportDate,COALESCE(SUM(dr.ProductionPlan),0),COALESCE(SUM(dr.ProductionActual),0),COUNT(DISTINCT CONCAT(dr.CustomerId,'|',dr.CreatedBy))
             FROM DailyReport dr INNER JOIN UserCustomer uc ON uc.CustomerId=dr.CustomerId AND uc.UserId=@UserId
             INNER JOIN PlantCustomer pc ON pc.PlantId=dr.PlantId AND pc.CustomerId=dr.CustomerId
             WHERE dr.PlantId=@PlantId AND dr.IsActive=1 AND dr.Status='APPROVED' AND dr.ModelId IS NOT NULL AND dr.ReportDate BETWEEN @Start AND @End

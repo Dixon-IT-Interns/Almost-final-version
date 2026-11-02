@@ -6,6 +6,7 @@ import {
   Settings, ShieldCheck, UserRound, UsersRound, X,
 } from "lucide-react";
 import { api } from "../api";
+import { groupApproverNotificationsByDate } from "../approvalNotifications";
 import dixonLogoWhite from "../assets/dixon-logo-white.png";
 import "./Header.css";
 
@@ -125,7 +126,12 @@ export default function Header({ user, onSignOut }) {
       try {
         const path = user.roleName === "Approver" ? "/approvals/pending" : "/contributor/notifications";
         const rows = await api.get(path);
-        if (active) setNotificationCount(Array.isArray(rows) ? rows.length : 0);
+        const count = Array.isArray(rows)
+          ? user.roleName === "Approver"
+            ? groupApproverNotificationsByDate(rows).length
+            : rows.length
+          : 0;
+        if (active) setNotificationCount(count);
       } catch {
         if (active) setNotificationCount(0);
       }
