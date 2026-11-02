@@ -47,6 +47,7 @@ builder.Services.AddScoped<InvitationRepository>();
 builder.Services.AddScoped<CatalogRepository>();
 builder.Services.AddScoped<DailyReportExcelImportService>();
 builder.Services.AddScoped<ViewerRepository>();
+builder.Services.AddScoped<ViewerAnalyticsRepository>();
 builder.Services.AddScoped<InvitationEmailService>();
 builder.Services.AddScoped<PasswordResetRepository>();
 builder.Services.AddHttpClient<SmsOtpService>();

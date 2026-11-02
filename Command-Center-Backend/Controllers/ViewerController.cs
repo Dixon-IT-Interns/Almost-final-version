@@ -336,8 +336,30 @@ public sealed class ViewerController(
             totalRow += additionalRows;
         }
 
+        foreach (var mergedRange in sheet.MergedRanges
+                     .Where(range =>
+                         range.RangeAddress.FirstAddress.RowNumber < totalRow
+                         && range.RangeAddress.LastAddress.RowNumber >= dataStart
+                         && range.RangeAddress.FirstAddress.ColumnNumber <= lastColumn
+                         && range.RangeAddress.LastAddress.ColumnNumber >= 1)
+                     .ToList())
+        {
+            mergedRange.Unmerge();
+        }
+
         for (var index = 0; index < reportLines.Length; index++)
             WriteReportLine(sheet, dataStart + index, reportLines[index], process);
+
+        for (var row = dataStart; row < dataStart + reportLines.Length; row++)
+        {
+            for (var column = 1; column <= lastColumn; column++)
+            {
+                var cell = sheet.Cell(row, column);
+                cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+                cell.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
+                cell.Style.Border.BottomBorderColor = XLColor.Black;
+            }
+        }
 
         for (var column = 1; column <= lastColumn; column++)
         {

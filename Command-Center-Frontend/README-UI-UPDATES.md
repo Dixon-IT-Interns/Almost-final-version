@@ -13,6 +13,7 @@ The contributor Daily Report uses a category-first entry matrix. Each production
 - Monthly KPI plan storage through the backend and `KPI_Master`.
 - Approval detail shows submitted daily values plus the matching monthly KPI plan reference.
 - Approval overview and history pages.
+- Viewer Analytics Workspace with permission-scoped date and dimension filters, KPI comparisons, interactive Recharts dashboards, a custom chart builder, server-paged data exploration, Excel/CSV export, rule-based insights and personal saved views. The existing daily Viewer work-progress report remains available from the workspace.
 - Contributor submissions and workspace guide pages.
 - Daily Report groups rows by KPI category and places relevant values such as Plan, Actual, Target and Installed side by side under each production line/model.
 - Daily Report remains horizontally scrollable and preserves line/model selection, KPI plan prefills, draft saves and submissions.
