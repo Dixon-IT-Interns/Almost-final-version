@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Dixon.CommandCenter.API")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+28184eea68983907fb85cb050e4e9ddf7fb32d82")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+bd69d254f05dd239b8f763868caf31a4bda4c20f")]
 [assembly: System.Reflection.AssemblyProductAttribute("Dixon.CommandCenter.API")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Dixon.CommandCenter.API")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
